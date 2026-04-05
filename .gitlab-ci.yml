@@ -1,0 +1,18 @@
+# GitLab CI：与 GitHub Actions 二选一或并行使用即可。
+
+image: python:3.11
+
+variables:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+cache:
+  paths:
+    - .cache/pip
+
+before_script:
+  - pip install -e ".[dev]"
+
+test:
+  stage: test
+  script:
+    - pytest --cov=conf --cov-report=term-missing --cov-report=xml --cov-fail-under=90

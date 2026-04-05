@@ -14,5 +14,30 @@ dependencies = [
     "python-dotenv>=1,<2",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "pytest-cov>=5,<6",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+# 覆盖率依赖 pytest-cov（见 dev 可选依赖）。默认不加 --cov，避免仅安装 pytest 时报错。
+# 带覆盖率与 90% 门槛：`pytest --cov=conf --cov-report=term-missing --cov-report=xml --cov-fail-under=90`
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]
+precision = 1
+include = ["*/conf/*"]

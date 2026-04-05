@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -9,6 +10,7 @@ from urllib.parse import quote
 
 from pydantic import AliasChoices, Field, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings.sources import PydanticBaseSettingsSource
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -20,7 +22,23 @@ class Settings(BaseSettings):
         env_file=_PROJECT_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        # 允许字段名以 model_ 开头（如 model_api_key），避免与 Pydantic 保留前缀冲突
+        protected_namespaces=("settings_",),
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """pytest 执行用例时跳过 `.env`，仅使用进程环境变量（由 `monkeypatch` 控制）。"""
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            return (init_settings, env_settings, file_secret_settings)
+        return (init_settings, env_settings, dotenv_settings, file_secret_settings)
 
     # --- LLM（OpenAI 兼容接口）---
     model_api_key: str = Field(
