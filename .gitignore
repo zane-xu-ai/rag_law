@@ -1,4 +1,7 @@
 # Byte-compiled / optimized / DLL files
+data/
+model/
+log/
 .DS_Store
 .idea
 __pycache__/
