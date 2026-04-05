@@ -25,6 +25,7 @@ class PreviewJSONBody(BaseModel):
     text: str = ""
     chunk_size: int = Field(..., ge=1)
     chunk_overlap: int = Field(..., ge=0)
+    boundary_aware: bool = False
 
 
 def _validate_overlap(size: int, overlap: int) -> None:
@@ -44,7 +45,13 @@ def _check_utf8_size(text: str) -> None:
         )
 
 
-def _run_preview(text: str, chunk_size: int, chunk_overlap: int) -> dict:
+def _run_preview(
+    text: str,
+    chunk_size: int,
+    chunk_overlap: int,
+    *,
+    boundary_aware: bool = False,
+) -> dict:
     if chunk_size < 1:
         raise HTTPException(status_code=422, detail="chunk_size 至少为 1")
     _validate_overlap(chunk_size, chunk_overlap)
@@ -57,6 +64,7 @@ def _run_preview(text: str, chunk_size: int, chunk_overlap: int) -> dict:
             source_path="preview/preview.txt",
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
+            boundary_aware=boundary_aware,
         )
     )
     n = len(chunks)
@@ -74,6 +82,7 @@ def _run_preview(text: str, chunk_size: int, chunk_overlap: int) -> dict:
         "chunk_count": n,
         "chunk_size": chunk_size,
         "chunk_overlap": chunk_overlap,
+        "boundary_aware": boundary_aware,
         "chars_per_chunk": lengths,
         "chars_per_chunk_stats": agg(lengths),
         "overlap_between_adjacent": overlaps,
@@ -130,7 +139,14 @@ async def api_preview(request: Request) -> JSONResponse:
     if "application/json" in ct:
         body = PreviewJSONBody.model_validate(await request.json())
         text = body.text
-        return JSONResponse(_run_preview(text, body.chunk_size, body.chunk_overlap))
+        return JSONResponse(
+            _run_preview(
+                text,
+                body.chunk_size,
+                body.chunk_overlap,
+                boundary_aware=body.boundary_aware,
+            )
+        )
 
     if "multipart/form-data" in ct:
         form = await request.form()
@@ -157,7 +173,16 @@ async def api_preview(request: Request) -> JSONResponse:
             chunk_overlap = int(form.get("chunk_overlap", "0"))
         except (TypeError, ValueError) as e:
             raise HTTPException(status_code=422, detail="chunk_size / chunk_overlap 须为整数") from e
-        return JSONResponse(_run_preview(text, chunk_size, chunk_overlap))
+        ba_raw = form.get("boundary_aware")
+        boundary_aware = ba_raw in ("true", "1", "on", True)
+        return JSONResponse(
+            _run_preview(
+                text,
+                chunk_size,
+                chunk_overlap,
+                boundary_aware=boundary_aware,
+            )
+        )
 
     raise HTTPException(
         status_code=415,

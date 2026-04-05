@@ -19,6 +19,7 @@
       `总字符数: ${s.total_chars}`,
       `块数: ${s.chunk_count}`,
       `chunk_size: ${s.chunk_size}  chunk_overlap: ${s.chunk_overlap}`,
+      `boundary_aware: ${s.boundary_aware}`,
       `原文段落数(粗分): ${s.source_paragraphs}`,
       "",
       "每段字符数: " + JSON.stringify(s.chars_per_chunk),
@@ -71,6 +72,7 @@
 
     const ta = $("text").value;
     const fileInput = $("file").files && $("file").files[0];
+    const boundary_aware = $("boundary_aware").checked;
 
     let res;
     try {
@@ -80,12 +82,20 @@
         fd.append("file", fileInput);
         fd.append("chunk_size", String(chunk_size));
         fd.append("chunk_overlap", String(chunk_overlap));
+        if (boundary_aware) {
+          fd.append("boundary_aware", "true");
+        }
         res = await fetch("/api/preview", { method: "POST", body: fd });
       } else {
         res = await fetch("/api/preview", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: ta, chunk_size, chunk_overlap }),
+          body: JSON.stringify({
+            text: ta,
+            chunk_size,
+            chunk_overlap,
+            boundary_aware,
+          }),
         });
       }
 

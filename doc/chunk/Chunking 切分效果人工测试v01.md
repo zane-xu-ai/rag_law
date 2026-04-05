@@ -66,12 +66,12 @@
 ## 5. API 草案（后端）
 
 - **`POST /api/preview`**
-  - **JSON**：`text`、`chunk_size`、`chunk_overlap`（整数；服务端校验 `overlap < size`）。
+  - **JSON**：`text`、`chunk_size`、`chunk_overlap`（整数；服务端校验 `overlap < size`）；可选 **`boundary_aware`**（布尔，默认 `false`）：为 `true` 时使用 [句边界对齐切分.md](句边界对齐切分.md) 规则（见 `chunking.boundary`）。
   - **multipart**：可选上传 `file`；若表单中 `text` 为空，则用上传文件按 **UTF-8** 解码（解码失败返回 4xx 并给出明确错误信息）。
   - **体积上限**：实现为 UTF-8 编码后不超过 **3 MiB**（`preview_logic.MAX_PREVIEW_BYTES`）；超限返回 413。
 
 - **响应 JSON（实现字段）**
-  - `summary`：`total_chars`、`chunk_count`、`chunk_size`、`chunk_overlap`、`chars_per_chunk`（各块长度列表）、`chars_per_chunk_stats`（`min` / `max` / `avg`，无块时为 `null`）、`overlap_between_adjacent`（相邻块重叠长度列表）、`overlap_adjacent_stats`（同上，少于两块时为 `null`）、`source_paragraphs`（原文按空行粗分的段落数）。
+  - `summary`：`total_chars`、`chunk_count`、`chunk_size`、`chunk_overlap`、**`boundary_aware`**（是否启用句边界对齐）、`chars_per_chunk`（各块长度列表）、`chars_per_chunk_stats`（`min` / `max` / `avg`，无块时为 `null`）、`overlap_between_adjacent`（相邻块重叠长度列表）、`overlap_adjacent_stats`（同上，少于两块时为 `null`）、`source_paragraphs`（原文按空行粗分的段落数）。
   - `display`：`mode` 为 `full` 或 `truncated`；`total_chunks`；`omitted_message`（截断时的说明文案，否则为 `null`）；`chunks`：每项含 `index`、`text`、`char_start`、`char_end`、`section`（`all` / `first` / `middle` / `last`，便于前端分组标签）。
 
 ---
@@ -97,7 +97,8 @@
 
 - **单测位置**
   - [tests/test_chunking/test_preview_logic.py](../../tests/test_chunking/test_preview_logic.py)：`preview_logic` 中重叠、展示下标、段落计数等纯函数。
-  - [tests/test_chunking/test_webui_preview.py](../../tests/test_chunking/test_webui_preview.py)：`TestClient` 覆盖 JSON 与 multipart、`/api/health`、首页 HTML、块数大于 15 的截断、非法 `Content-Type` 等。
+  - [tests/test_chunking/test_webui_preview.py](../../tests/test_chunking/test_webui_preview.py)：`TestClient` 覆盖 JSON 与 multipart、`/api/health`、首页 HTML、块数大于 15 的截断、`boundary_aware`、非法 `Content-Type` 等。
+  - [tests/test_chunking/test_boundary.py](../../tests/test_chunking/test_boundary.py)：句边界 `adjust_start` / `adjust_end`、`iter_text_slices_boundary_aware` 与 `iter_chunks_for_text(boundary_aware=True)`。
 - **CI**：GitHub Actions（[.github/workflows/ci.yml](../../.github/workflows/ci.yml)）与 GitLab CI（[.gitlab-ci.yml](../../.gitlab-ci.yml)）在安装依赖时使用 **`pip install -e ".[dev,web]"`**，以便上述测试在流水线中可直接运行，无需单独可选步骤。
 
 ---
@@ -106,7 +107,7 @@
 
 - 用户鉴权、HTTPS、生产级部署。
 - 接入向量模型、Elasticsearch、PDF 解析。
-- 修改 [split.py](../../src/chunking/split.py) 的滑窗算法（预览页只消费现有 API）。
+- 预览页可通过 `boundary_aware` 调用句边界对齐；**默认仍为纯滑窗**，与 `iter_chunks_for_text` 默认参数一致。
 
 ---
 

@@ -23,7 +23,7 @@ uv run pytest
 uv run pytest --cov=conf --cov-report=term-missing --cov-report=xml --cov-fail-under=90
 ```
 
-**切分预览 Web（可选）**：本地人工验收滑窗效果，见 [`doc/chunk/Chunking 切分效果人工测试v01.md`](doc/chunk/Chunking%20切分效果人工测试v01.md)。需额外安装 `web` 依赖：`uv sync --extra dev --extra web`，再执行 `uv run python -m chunking.webui`，浏览器访问 `http://127.0.0.1:8765/`（无鉴权，仅本机调试）。等价命令：`uv run uvicorn chunking.webui.app:app --host 127.0.0.1 --port 8765`。
+**切分预览 Web（可选）**：本地人工验收滑窗效果，见 [`doc/chunk/Chunking 切分效果人工测试v01.md`](doc/chunk/Chunking%20切分效果人工测试v01.md)。可选勾选「句边界对齐」，规则见 [`doc/chunk/句边界对齐切分.md`](doc/chunk/句边界对齐切分.md)。需额外安装 `web` 依赖：`uv sync --extra dev --extra web`，再执行 `uv run python -m chunking.webui`，浏览器访问 `http://127.0.0.1:8765/`（无鉴权，仅本机调试）。等价命令：`uv run uvicorn chunking.webui.app:app --host 127.0.0.1 --port 8765`。
 
 或 `source .venv/bin/activate` 后再执行 `pytest ...`。若直接输入 `pytest` 而 `command -v pytest` 指向 `/opt/anaconda3/bin/pytest`，即使用 `uv add pytest-cov` 装进了 `.venv`，也会出现 `--cov` 无法识别（实际跑的是 conda 的 pytest）。
 

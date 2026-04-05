@@ -9,6 +9,8 @@ from typing import Any, Optional
 
 from conf.settings import get_settings, project_root
 
+from chunking.boundary import iter_text_slices_boundary_aware
+
 
 @dataclass
 class TextChunk:
@@ -62,11 +64,16 @@ def iter_chunks_for_text(
     mime_type: str = "text/markdown",
     doc_type: str = "law_md",
     domain: str = "law",
+    boundary_aware: bool = False,
 ) -> Iterator[TextChunk]:
-    """对已有字符串切分并附加元数据（单文件内 chunk_index 从 0 递增）。"""
+    """对已有字符串切分并附加元数据（单文件内 chunk_index 从 0 递增）。
+
+    `boundary_aware=True` 时在滑窗初值上按句界（。！？；与换行等）微调首尾，见 `doc/chunk/句边界对齐切分.md`。
+    """
     sid = source_path or source_file
+    slicer = iter_text_slices_boundary_aware if boundary_aware else iter_text_slices
     for idx, (piece, c0, c1) in enumerate(
-        iter_text_slices(full_text, chunk_size, chunk_overlap)
+        slicer(full_text, chunk_size, chunk_overlap)
     ):
         yield TextChunk(
             text=piece,
@@ -89,10 +96,12 @@ def iter_file_chunks(
     chunk_size: int,
     chunk_overlap: int,
     root: Optional[Path] = None,
+    boundary_aware: bool = False,
 ) -> Iterator[TextChunk]:
     """
     读取单个 UTF-8 Markdown 文件并切分。
     `root` 用于计算 `source_path`（相对路径）；默认使用 `project_root()`。
+    `boundary_aware=True` 时使用句边界对齐（见 `chunking.boundary`）。
     """
     root = root if root is not None else project_root()
     text = md_path.read_text(encoding="utf-8")
@@ -107,6 +116,7 @@ def iter_file_chunks(
         source_path=source_path,
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
+        boundary_aware=boundary_aware,
     )
 
 
@@ -116,6 +126,7 @@ def iter_chunks_for_data_dir(
     chunk_size: Optional[int] = None,
     chunk_overlap: Optional[int] = None,
     root: Optional[Path] = None,
+    boundary_aware: bool = False,
 ) -> Iterator[TextChunk]:
     """
     遍历目录下所有 `*.md`（排序稳定），依次切分。
@@ -139,6 +150,7 @@ def iter_chunks_for_data_dir(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             root=root,
+            boundary_aware=boundary_aware,
         )
 
 
@@ -148,6 +160,7 @@ def load_all_chunks(
     chunk_size: Optional[int] = None,
     chunk_overlap: Optional[int] = None,
     root: Optional[Path] = None,
+    boundary_aware: bool = False,
 ) -> list[TextChunk]:
     """等价于 `list(iter_chunks_for_data_dir(...))`。"""
     return list(
@@ -156,5 +169,6 @@ def load_all_chunks(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             root=root,
+            boundary_aware=boundary_aware,
         )
     )

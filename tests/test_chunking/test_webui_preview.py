@@ -35,6 +35,7 @@ def test_preview_json_short_full_mode(client: TestClient) -> None:
     data = r.json()
     assert data["summary"]["chunk_count"] == 3
     assert data["summary"]["total_chars"] == 10
+    assert data["summary"]["boundary_aware"] is False
     assert data["display"]["mode"] == "full"
     assert len(data["display"]["chunks"]) == 3
     assert data["display"]["chunks"][0]["section"] == "all"
@@ -77,6 +78,20 @@ def test_preview_multipart_file_utf8(client: TestClient) -> None:
     data = r.json()
     assert data["summary"]["total_chars"] == 6
     assert data["summary"]["source_paragraphs"] == 2
+
+
+def test_preview_boundary_aware_json(client: TestClient) -> None:
+    r = client.post(
+        "/api/preview",
+        json={
+            "text": "abc。def",
+            "chunk_size": 4,
+            "chunk_overlap": 0,
+            "boundary_aware": True,
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["summary"]["boundary_aware"] is True
 
 
 def test_preview_wrong_content_type(client: TestClient) -> None:

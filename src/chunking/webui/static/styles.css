@@ -98,6 +98,21 @@ input[type="number"] {
   flex-wrap: wrap;
 }
 
+label.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-bottom: 0.85rem;
+  cursor: pointer;
+}
+
+label.check input {
+  margin-top: 0.2rem;
+  width: auto;
+}
+
 .btn {
   background: var(--accent);
   color: #fff;
