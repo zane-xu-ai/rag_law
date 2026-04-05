@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chunking 切分预览</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <h1>字符滑窗切分预览</h1>
+      <p class="muted">
+        本地调试用：输入或上传 UTF-8 文本，使用与 <code>chunking.split</code> 相同的滑窗逻辑。无鉴权，请勿暴露到公网。
+      </p>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <label for="text">正文</label>
+        <textarea id="text" rows="14" placeholder="在此粘贴文本，或仅使用下方上传文件…"></textarea>
+
+        <label for="file">上传文本文件（UTF-8，可选）</label>
+        <input id="file" type="file" accept=".txt,.md,text/plain" />
+
+        <div class="row">
+          <div>
+            <label for="chunk_size">chunk_size</label>
+            <input id="chunk_size" type="number" min="1" value="1500" />
+          </div>
+          <div>
+            <label for="chunk_overlap">chunk_overlap</label>
+            <input id="chunk_overlap" type="number" min="0" value="50" />
+          </div>
+        </div>
+
+        <button type="button" id="btn" class="btn">切分</button>
+        <p id="err" class="error" hidden></p>
+      </section>
+
+      <section class="panel results" id="results" hidden>
+        <h2>汇总</h2>
+        <pre id="summary" class="pre"></pre>
+
+        <h2>分段展示</h2>
+        <p id="omit" class="omit muted"></p>
+        <div id="chunks"></div>
+      </section>
+    </main>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

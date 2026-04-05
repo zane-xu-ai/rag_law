@@ -3,7 +3,7 @@
 | 属性 | 说明 |
 | --- | --- |
 | 文档版本 | v01 |
-| 状态 | 规格说明（实现代码后续落在 [src/chunking/webui](../../src/chunking/webui/)） |
+| 状态 | 已实现预览页（代码在 [src/chunking/webui](../../src/chunking/webui/)） |
 | 关联切分逻辑 | [src/chunking/split.py](../../src/chunking/split.py)（`iter_text_slices` / `iter_chunks_for_text`） |
 
 ---
@@ -88,8 +88,11 @@
 
 ## 7. 安全与运行方式
 
-- 默认面向 **本机调试**；通过 `127.0.0.1` 或文档给出的端口访问；若需局域网访问，应在文档中提示风险（无鉴权）。
-- 启动方式示例（实现后写入 README 或本文后续版本）：`uvicorn ...` 或 `python -m chunking.webui`（具体模块名以代码为准）。
+- 默认面向 **本机调试**；通过 `127.0.0.1` 访问；若需局域网访问，应自行评估风险（**无鉴权**）。
+- **启动**（需安装 `web` 额外依赖：`pip install -e ".[web]"` 或 `uv sync --extra web`）：
+  - `uv run python -m chunking.webui`（默认 `127.0.0.1:8765`）
+  - 或 `uv run uvicorn chunking.webui.app:app --host 127.0.0.1 --port 8765`
+- 浏览器打开 `http://127.0.0.1:8765/` 使用单页界面；API 为 `POST /api/preview`、`GET /api/health`。
 
 ---
 

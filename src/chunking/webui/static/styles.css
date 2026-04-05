@@ -1,0 +1,162 @@
+:root {
+  --bg: #f6f4f0;
+  --panel: #fff;
+  --text: #1a1a1a;
+  --muted: #5c5c5c;
+  --accent: #0d5c63;
+  --border: #d8d4cc;
+  --err: #8b2942;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Iowan Old Style", "Palatino Linotype", "Songti SC", serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.header {
+  padding: 1.5rem 1.75rem 0.5rem;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.header h1 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+code {
+  font-size: 0.85em;
+  background: #ece8e0;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+.layout {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1rem 1.75rem 2.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  margin-bottom: 0.25rem;
+  color: var(--muted);
+}
+
+textarea,
+input[type="number"],
+input[type="file"] {
+  width: 100%;
+  margin-bottom: 0.85rem;
+  font: inherit;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 8rem;
+  padding: 0.6rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+input[type="number"] {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-width: 12rem;
+}
+
+.row {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 0.55rem 1.25rem;
+  font: inherit;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  filter: brightness(1.05);
+}
+
+.error {
+  color: var(--err);
+  font-size: 0.9rem;
+  margin: 0.5rem 0 0;
+}
+
+.pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f0ebe3;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+}
+
+.chunk {
+  border-left: 3px solid var(--accent);
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  background: #faf8f5;
+  border-radius: 0 6px 6px 0;
+}
+
+.chunk-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+
+.chunk-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.9rem;
+}
+
+.section-tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  margin-right: 0.5rem;
+}
+
+.omit:empty {
+  display: none;
+}

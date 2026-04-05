@@ -22,7 +22,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,web]"
 
       - name: Run tests with coverage
         run: pytest --cov=conf --cov-report=term-missing --cov-report=xml --cov-fail-under=90
