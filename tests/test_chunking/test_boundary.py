@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from chunking.boundary import (
@@ -111,3 +113,39 @@ def test_clamp_start_overlap_uses_upper_bound_not_lower() -> None:
 def test_overlap_must_be_less_than_size_boundary_aware() -> None:
     with pytest.raises(ValueError, match="chunk_overlap"):
         list(iter_text_slices_boundary_aware("ab", chunk_size=2, chunk_overlap=2))
+
+
+def test_boundary_aware_constitution_excerpt_overlap_chunks_sentence_aligned() -> None:
+    """
+    回归：相邻块在重叠窗口处均应对齐句界。
+
+    - 第一段：`adjust_end` 后右开终点前一字符须为句界截止符（不得以从句/短语中间截断）。
+    - 第二段：不得以「的统一领导下…」半截开头（重叠上界曾误用 max 导致）。
+
+    语料：tests/test_chunking/fixture_constitution_excerpt.txt（宪法节选，与用户调试时一致）。
+    参数：chunk_size=1500, chunk_overlap=100，与预览默认量级一致。
+    """
+    text = (Path(__file__).resolve().parent / "fixture_constitution_excerpt.txt").read_text(
+        encoding="utf-8"
+    )
+    chunks = list(
+        iter_text_slices_boundary_aware(
+            text,
+            chunk_size=1500,
+            chunk_overlap=100,
+            max_probe=30,
+        )
+    )
+    assert len(chunks) >= 2
+    first_text, s0, e0 = chunks[0]
+    assert e0 > s0
+    assert text[e0 - 1] in BOUNDARY_CHARS, (
+        "第一段结尾应对齐到句界截止符（adjust_end），不得以从句/短语中间截断"
+    )
+    assert first_text.rstrip()[-1] == text[e0 - 1], "首块文本尾部应与全局切片一致"
+    second = chunks[1][0]
+    stripped = second.lstrip()
+    assert not stripped.startswith("的统一领导下"), (
+        "第二块不应以依存短语半截开头；若失败请检查重叠上界 min(s, prev_end-overlap)"
+    )
+    assert "中央和地方的国家机构" in second[:200], "第二块应包含「中央和地方的国家机构」完整起句语境"
