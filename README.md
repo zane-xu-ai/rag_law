@@ -40,7 +40,7 @@ pytest --cov=conf --cov-report=term-missing --cov-report=xml --cov-fail-under=90
 
 ## CI
 
-- **GitHub Actions**：推送或 PR 至 `main` / `master` 时运行，见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)（Python 3.11）。
+- **GitHub Actions**：推送或 PR 至 `main` / `master` 时运行，见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)（Python 3.11；`actions/checkout@v6`、`actions/setup-python@v6`）。**工作流成功/失败通知**（邮件、站内等）见 [`doc/cicd/README.md`](doc/cicd/README.md) 中「工作流成功/失败如何收到通知」。
 - **GitLab CI**：见根目录 [`.gitlab-ci.yml`](.gitlab-ci.yml)。
 
 在 CI 中请勿写入真实 API Key；若日后做集成测试，请使用仓库 **Secrets** 注入环境变量。

@@ -71,6 +71,20 @@
 - **触发**：推送到 `main` / `master`，或针对这两支的 **Pull Request**。
 - **矩阵**：Python **3.11**。
 - **步骤**：检出代码 → 安装 Python（pip 缓存）→ `pip install -e ".[dev]"` → 带覆盖率参数执行 `pytest`（与上文「带覆盖率」命令一致）。
+- **官方 Action 版本**：使用 `actions/checkout@v6`、`actions/setup-python@v6`（基于 Node.js 24 运行时），可减少 GitHub 关于「Node.js 20 Action 弃用」的日志警告；若日后官方推荐更新主版本，可同步升级并查看各 Action 的 Release 说明。
+
+#### 工作流成功/失败如何收到通知
+
+通知在 **GitHub 账号侧** 配置，仓库 YAML 默认不会单独发邮件。
+
+| 方式 | 说明 |
+| --- | --- |
+| 站内 | 登录 GitHub 后右上角铃铛；对仓库 **Watch** 并在 [Notifications](https://github.com/settings/notifications) 中勾选与 **Actions** 相关的选项。 |
+| 邮件 | 打开 **Settings → Notifications**（个人设置），在 **Actions** 区域勾选工作流运行通知（可按「仅失败」等偏好调整）。 |
+| 手机 | 安装 GitHub Mobile 并开启推送（仍受上述通知偏好约束）。 |
+| 第三方 | 在工作流中增加步骤，通过 Webhook 推送到 Slack/飞书/钉钉等（需自行保管 URL 与密钥）。 |
+
+团队场景可在频道侧接 Webhook；个人仓库通常 **邮件 + 站内** 即可。
 
 ### GitLab CI
 
