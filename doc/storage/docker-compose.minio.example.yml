@@ -1,0 +1,29 @@
+# 本仓库「RAG 专用」MinIO 示例（与 Milvus 自带 MinIO 分离）。
+# 使用：复制到项目根或任意目录，按需改端口与密码后执行：
+#   docker compose -f docker-compose.minio.example.yml up -d
+#
+# 与下方 README 中「本机已有 Milvus-MinIO」一节对照阅读，避免端口冲突。
+
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
+    container_name: rag-law-minio
+    restart: unless-stopped
+    ports:
+      - "9002:9000"   # S3 API → 宿主机 9002（避免与常见 9000 占用冲突）
+      - "9003:9001"   # 控制台 → 宿主机 9003
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - rag_law_minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  rag_law_minio_data:
