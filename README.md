@@ -15,7 +15,9 @@ pip install -e ".[dev]"
 pytest
 ```
 
-**Elasticsearch**：`src/es_store` 使用 **`elasticsearch`** Python 客户端（已包含在 **`dev`** 可选依赖中；亦可单独 `pip install -e ".[es]"`）。本地集群示例：`docker compose -f doc/storage/docker-compose.elasticsearch.yml up -d`，再执行冒烟 `PYTHONPATH=src uv run python scripts/es_smoke_test.py`。索引命名见 [`doc/plan/v1.0.3-es-store-plan.md`](doc/plan/v1.0.3-es-store-plan.md)。
+**Elasticsearch**：`src/es_store` 使用 **`elasticsearch`** Python 客户端（已包含在 **`dev`** 可选依赖中；亦可单独 `pip install -e ".[es]"`）。本地集群示例：`docker compose -f doc/storage/docker-compose.elasticsearch.yml up -d`，再执行冒烟 `uv run python scripts/es_smoke_test.py`。索引命名见 [`doc/plan/v1.0.3-es-store-plan.md`](doc/plan/v1.0.3-es-store-plan.md)。
+
+**入库（MVP）**：`data/*.md` 切分 → BGE-M3 → 写入 `ES_INDEX`（默认全量重建索引）。需已 `uv sync --extra embedding` 且 ES 可达。示例：`uv run python scripts/rag_ingest.py --dry-run`（仅统计块数）、`uv run python scripts/rag_ingest.py`。说明见 [`doc/plan/v1.0.4-ingest-plan.md`](doc/plan/v1.0.4-ingest-plan.md)（脚本名 **`rag_ingest.py`**，勿用 `ingest.py`，以免与 `src/ingest` 包冲突）。
 
 **向量（BGE-M3）**：`src/embeddings` 依赖可选组 **`embedding`**（`FlagEmbedding`、`torch`、`numpy` 等；**`transformers` 锁定为 4.x**，与当前 `FlagEmbedding` 版本兼容）。仅跑切分/配置时可不装；需要本地编码时请执行 `uv sync --extra embedding`（默认已含 `dev`+`web`）或 `pip install -e ".[dev,web,embedding]"`。
 

@@ -88,4 +88,4 @@ exclude_lines = [
     "^\\s*\\.\\.\\.\\s*$",
 ]
 precision = 1
-include = ["*/conf/*", "*/embeddings/*", "*/es_store/*"]
+include = ["*/conf/*", "*/embeddings/*", "*/es_store/*", "*/ingest/*"]
