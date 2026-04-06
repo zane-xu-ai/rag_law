@@ -15,6 +15,8 @@ pip install -e ".[dev]"
 pytest
 ```
 
+**Elasticsearch**：`src/es_store` 使用 **`elasticsearch`** Python 客户端（已包含在 **`dev`** 可选依赖中；亦可单独 `pip install -e ".[es]"`）。本地集群示例：`docker compose -f doc/storage/docker-compose.elasticsearch.yml up -d`，再执行冒烟 `PYTHONPATH=src uv run python scripts/es_smoke_test.py`。索引命名见 [`doc/plan/v1.0.3-es-store-plan.md`](doc/plan/v1.0.3-es-store-plan.md)。
+
 **向量（BGE-M3）**：`src/embeddings` 依赖可选组 **`embedding`**（`FlagEmbedding`、`torch`、`numpy` 等；**`transformers` 锁定为 4.x**，与当前 `FlagEmbedding` 版本兼容）。仅跑切分/配置时可不装；需要本地编码时请执行 `uv sync --extra embedding`（默认已含 `dev`+`web`）或 `pip install -e ".[dev,web,embedding]"`。
 
 **使用 uv 时**：`[dependency-groups]` 含 **`dev`**（pytest 等）与 **`web`**（FastAPI 等，跑 chunking WebUI 测试需要），**[tool.uv] default-groups** 为 `["dev","web"]`，因此 **`uv sync` 与 CI 的 `pip install -e ".[dev,web]"` 等价**，无需再写 `--extra dev` / `--extra web`。请同步并**用虚拟环境里的 pytest**，不要依赖 conda PATH 上的全局 `pytest`：
@@ -22,7 +24,7 @@ pytest
 ```bash
 uv sync
 uv run pytest
-uv run pytest --cov=conf --cov=embeddings --cov-report=term-missing --cov-report=xml --cov-fail-under=90
+uv run pytest --cov=conf --cov=embeddings --cov=es_store --cov-report=term-missing --cov-report=xml --cov-fail-under=90
 ```
 
 说明：若只执行裸 `uv sync` 且此前未配置 `default-groups`，会只装核心依赖，**不会**装 `dev`，`pytest` 会被卸掉；若仍出现该情况，请拉取本仓库最新 `pyproject.toml` 后再 `uv sync`。
@@ -37,7 +39,7 @@ uv run pytest --cov=conf --cov=embeddings --cov-report=term-missing --cov-report
 
 ```bash
 pip install -e ".[dev]"
-pytest --cov=conf --cov=embeddings --cov-report=term-missing --cov-report=xml --cov-fail-under=90
+pytest --cov=conf --cov=embeddings --cov=es_store --cov-report=term-missing --cov-report=xml --cov-fail-under=90
 ```
 
 - 配置相关测试位于 [`tests/test_conf/test_settings.py`](tests/test_conf/test_settings.py)（对应 `src/conf/settings.py`）。目录故意命名为 `test_conf`，避免使用 `tests/conf/` 与 Python 包 `conf` 同名导致导入被遮蔽。

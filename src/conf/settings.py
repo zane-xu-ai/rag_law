@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     # --- Elasticsearch ---
     es_host: str = Field(default="localhost", validation_alias="ES_HOST")
     es_port: int = Field(default=9200, validation_alias="ES_PORT")
-    es_index: str = Field(default="rag_law_chunks", validation_alias="ES_INDEX")
+    es_index: str = Field(default="rag_law_doc_chunks", validation_alias="ES_INDEX")
     es_user: Optional[str] = Field(default=None, validation_alias="ES_USER")
     es_password: Optional[str] = Field(default=None, validation_alias="ES_PASSWORD")
     es_use_ssl: bool = Field(default=False, validation_alias="ES_USE_SSL")
