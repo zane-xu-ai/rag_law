@@ -9,6 +9,22 @@ from fastapi.testclient import TestClient
 
 from chunking.webui.app import app
 
+
+@pytest.fixture(autouse=True)
+def _webui_min_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """预览在 boundary_aware 时会读 get_settings().chunk_overlap_floor，需完整必填项。"""
+    monkeypatch.setenv("MODEL_API_KEY", "test-model-api-key")
+    monkeypatch.setenv("MODEL_BASE_URL", "https://dashscope.example.com/compatible-mode/v1")
+    monkeypatch.setenv("MODEL_NAME", "qwen-test")
+    monkeypatch.setenv("BGE_M3_PATH", "/opt/models/bge-m3")
+    monkeypatch.setenv("ES_HOST", "localhost")
+    monkeypatch.setenv("ES_PORT", "9200")
+    monkeypatch.setenv("ES_INDEX", "test_index")
+    monkeypatch.setenv("CHUNK_SIZE", "800")
+    monkeypatch.setenv("CHUNK_OVERLAP", "50")
+    monkeypatch.setenv("RETRIEVAL_K", "5")
+
+
 @pytest.fixture
 def client() -> TestClient:
     return TestClient(app)

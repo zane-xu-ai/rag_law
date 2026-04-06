@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from chunking.split import TextChunk, iter_chunks_for_text
+from conf.settings import get_settings
 from chunking.webui.preview_logic import (
     MAX_PREVIEW_BYTES,
     adjacent_overlaps,
@@ -57,6 +58,10 @@ def _run_preview(
     _validate_overlap(chunk_size, chunk_overlap)
     _check_utf8_size(text)
 
+    # 预览请求的 chunk_overlap 可与 .env 中全局值不同；重叠下界不得超过本次请求的 chunk_overlap
+    overlap_floor = None
+    if boundary_aware:
+        overlap_floor = min(chunk_overlap, get_settings().chunk_overlap_floor)
     chunks: list[TextChunk] = list(
         iter_chunks_for_text(
             text,
@@ -65,6 +70,7 @@ def _run_preview(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             boundary_aware=boundary_aware,
+            overlap_floor=overlap_floor,
         )
     )
     n = len(chunks)

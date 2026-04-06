@@ -65,16 +65,24 @@ def iter_chunks_for_text(
     doc_type: str = "law_md",
     domain: str = "law",
     boundary_aware: bool = False,
+    overlap_floor: Optional[int] = None,
 ) -> Iterator[TextChunk]:
     """对已有字符串切分并附加元数据（单文件内 chunk_index 从 0 递增）。
 
     `boundary_aware=True` 时在滑窗初值上按句界（。！？；与换行等）微调首尾，见 `doc/chunk/句边界对齐切分.md`。
+    重叠下界未传时等于 `chunk_overlap`；批量入库与预览可传入 `get_settings().chunk_overlap_floor`。
     """
     sid = source_path or source_file
-    slicer = iter_text_slices_boundary_aware if boundary_aware else iter_text_slices
-    for idx, (piece, c0, c1) in enumerate(
-        slicer(full_text, chunk_size, chunk_overlap)
-    ):
+    if boundary_aware:
+        # 未显式传入时以 chunk_overlap 为重叠下界；从 data 目录/配置批量切分时由调用方传入
+        # get_settings().chunk_overlap_floor（见 iter_chunks_for_data_dir、webui）。
+        floor = overlap_floor if overlap_floor is not None else chunk_overlap
+        slicer_iter = iter_text_slices_boundary_aware(
+            full_text, chunk_size, chunk_overlap, overlap_floor=floor
+        )
+    else:
+        slicer_iter = iter_text_slices(full_text, chunk_size, chunk_overlap)
+    for idx, (piece, c0, c1) in enumerate(slicer_iter):
         yield TextChunk(
             text=piece,
             source_file=source_file,
@@ -97,6 +105,7 @@ def iter_file_chunks(
     chunk_overlap: int,
     root: Optional[Path] = None,
     boundary_aware: bool = False,
+    overlap_floor: Optional[int] = None,
 ) -> Iterator[TextChunk]:
     """
     读取单个 UTF-8 Markdown 文件并切分。
@@ -117,6 +126,7 @@ def iter_file_chunks(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         boundary_aware=boundary_aware,
+        overlap_floor=overlap_floor,
     )
 
 
@@ -127,6 +137,7 @@ def iter_chunks_for_data_dir(
     chunk_overlap: Optional[int] = None,
     root: Optional[Path] = None,
     boundary_aware: bool = False,
+    overlap_floor: Optional[int] = None,
 ) -> Iterator[TextChunk]:
     """
     遍历目录下所有 `*.md`（排序稳定），依次切分。
@@ -134,10 +145,15 @@ def iter_chunks_for_data_dir(
     若 `chunk_size` / `chunk_overlap` 未同时显式传入，则从 `conf.get_settings()` 读取缺失项。
     若任一为 None，则两者均从配置读取（避免与 settings 不一致）。
     """
+    s = None
     if chunk_size is None or chunk_overlap is None:
         s = get_settings()
         chunk_size = chunk_size if chunk_size is not None else s.chunk_size
         chunk_overlap = chunk_overlap if chunk_overlap is not None else s.chunk_overlap
+    if boundary_aware and overlap_floor is None:
+        if s is None:
+            s = get_settings()
+        overlap_floor = s.chunk_overlap_floor
 
     root = root if root is not None else project_root()
     base = data_dir if data_dir is not None else root / "data"
@@ -151,6 +167,7 @@ def iter_chunks_for_data_dir(
             chunk_overlap=chunk_overlap,
             root=root,
             boundary_aware=boundary_aware,
+            overlap_floor=overlap_floor,
         )
 
 
@@ -161,6 +178,7 @@ def load_all_chunks(
     chunk_overlap: Optional[int] = None,
     root: Optional[Path] = None,
     boundary_aware: bool = False,
+    overlap_floor: Optional[int] = None,
 ) -> list[TextChunk]:
     """等价于 `list(iter_chunks_for_data_dir(...))`。"""
     return list(
@@ -170,5 +188,6 @@ def load_all_chunks(
             chunk_overlap=chunk_overlap,
             root=root,
             boundary_aware=boundary_aware,
+            overlap_floor=overlap_floor,
         )
     )

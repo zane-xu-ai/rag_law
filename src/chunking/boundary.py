@@ -117,15 +117,15 @@ def adjust_end(
 def _clamp_start_for_overlap(
     s_adj: int,
     prev_end: int | None,
-    chunk_overlap: int,
+    overlap_floor: int,
 ) -> int:
     """
-    与上一块至少重叠 chunk_overlap 个字符：需 prev_end - start >= chunk_overlap，
-    即 start <= prev_end - chunk_overlap（起点不得晚于该上界）。
+    与上一块至少重叠 overlap_floor 个字符：需 prev_end - start >= overlap_floor，
+    即 start <= prev_end - overlap_floor（起点不得晚于该上界）。
     """
     if prev_end is None:
         return s_adj
-    upper = prev_end - chunk_overlap
+    upper = prev_end - overlap_floor
     if upper < 0:
         return s_adj
     return min(s_adj, upper)
@@ -136,14 +136,23 @@ def iter_text_slices_boundary_aware(
     chunk_size: int,
     chunk_overlap: int,
     *,
+    overlap_floor: int | None = None,
     max_probe: int = DEFAULT_MAX_PROBE,
 ) -> Iterator[tuple[str, int, int]]:
     """
     先按 `iter_text_slices` 取初值，再对每段做句首/句尾对齐，并保证与上一块
-    重叠不少于 chunk_overlap（第二块起：start <= prev_end - chunk_overlap）。
+    重叠不少于 overlap_floor（默认等于 chunk_overlap，即滑窗目标重叠）。
+
+    overlap_floor 可小于 chunk_overlap：句界对齐后允许实际重叠在
+    [overlap_floor, chunk_overlap] 间浮动（例如目标 100、下界 60）。
     """
     if chunk_overlap >= chunk_size:
         raise ValueError("chunk_overlap 必须小于 chunk_size")
+    floor = chunk_overlap if overlap_floor is None else overlap_floor
+    if floor > chunk_overlap:
+        raise ValueError(
+            "overlap_floor 不能大于 chunk_overlap（滑窗步长由 chunk_size - chunk_overlap 决定）"
+        )
     n = len(text)
     if n == 0:
         return
@@ -153,14 +162,14 @@ def iter_text_slices_boundary_aware(
     prev_end: int | None = None
 
     for _piece, s0, e0 in raw:
-        s_adj = adjust_start(text, s0, max_probe, n=n)
-        s_adj = _clamp_start_for_overlap(s_adj, prev_end, chunk_overlap)
+        s_aligned = adjust_start(text, s0, max_probe, n=n)
+        s_adj = _clamp_start_for_overlap(s_aligned, prev_end, floor)
 
         e_adj = adjust_end(text, e0, max_probe, n=n)
 
         if s_adj >= e_adj:
             s_adj, e_adj = s0, e0
-            s_adj = _clamp_start_for_overlap(s_adj, prev_end, chunk_overlap)
+            s_adj = _clamp_start_for_overlap(s_adj, prev_end, floor)
         if s_adj >= e_adj:
             e_adj = min(s_adj + chunk_size, n)
         e_adj = min(e_adj, n)

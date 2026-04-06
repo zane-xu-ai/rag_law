@@ -80,6 +80,7 @@ def test_iter_chunks_boundary_aware_flag() -> None:
             chunk_size=20,
             chunk_overlap=0,
             boundary_aware=True,
+            overlap_floor=0,
         )
     )
     assert len(plain) == 2
@@ -108,6 +109,16 @@ def test_clamp_start_overlap_uses_upper_bound_not_lower() -> None:
     assert _clamp_start_for_overlap(1380, 1506, 100) == 1380
     assert _clamp_start_for_overlap(1450, 1506, 100) == 1406
     assert _clamp_start_for_overlap(100, None, 100) == 100
+
+
+def test_overlap_floor_below_chunk_overlap_allows_smaller_actual_overlap() -> None:
+    """
+    重叠下界（overlap_floor）可小于 chunk_overlap：clamp 上界为 prev_end - floor，
+    floor 较小时不必把起点左推到「至少 chunk_overlap」重叠。
+    """
+    # 与运行时日志一致：prev_end=18286、s_aligned=18225 时，重叠仅对齐已为 61
+    assert _clamp_start_for_overlap(18225, 18286, 100) == 18186
+    assert _clamp_start_for_overlap(18225, 18286, 60) == 18225
 
 
 def test_overlap_must_be_less_than_size_boundary_aware() -> None:

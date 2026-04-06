@@ -68,6 +68,20 @@ def test_overlap_must_be_less_than_chunk_size(monkeypatch: pytest.MonkeyPatch) -
         get_settings()
 
 
+def test_chunk_overlap_min_must_not_exceed_chunk_overlap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _base_env(monkeypatch, CHUNK_OVERLAP="50", CHUNK_OVERLAP_MIN="60")
+    with pytest.raises(ValueError, match="CHUNK_OVERLAP_MIN"):
+        get_settings()
+
+
+def test_chunk_overlap_floor_uses_min_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    _base_env(monkeypatch, CHUNK_OVERLAP="100", CHUNK_OVERLAP_MIN="60")
+    get_settings.cache_clear()
+    assert get_settings().chunk_overlap_floor == 60
+
+
 def test_es_url_without_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     _base_env(monkeypatch, ES_USE_SSL="false")
     s = get_settings()
