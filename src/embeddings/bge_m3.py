@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 
 def _import_numpy():
@@ -52,7 +52,13 @@ def _load_bgem3_class():
 class BgeM3EmbeddingBackend:
     """使用本地 `BGE_M3_PATH` 加载模型；`embed_query` 走 `encode_queries`，文档走 `encode_corpus`。"""
 
-    def __init__(self, model_path: str, batch_size: int = 32) -> None:
+    def __init__(
+        self,
+        model_path: str,
+        batch_size: int = 32,
+        *,
+        devices: Optional[str] = None,
+    ) -> None:
         if batch_size < 1:
             raise ValueError("batch_size 必须 >= 1")
         self._batch_size = batch_size
@@ -67,15 +73,25 @@ class BgeM3EmbeddingBackend:
 
         BGEM3FlagModel = _load_bgem3_class()
         use_fp16 = bool(torch.cuda.is_available())
-        self._model = BGEM3FlagModel(
-            model_path,
-            batch_size=batch_size,
-            use_fp16=use_fp16,
-            normalize_embeddings=False,
-            return_dense=True,
-            return_sparse=False,
-            return_colbert_vecs=False,
-        )
+        kw: dict[str, Any] = {
+            "batch_size": batch_size,
+            "use_fp16": use_fp16,
+            "normalize_embeddings": False,
+            "return_dense": True,
+            "return_sparse": False,
+            "return_colbert_vecs": False,
+        }
+        if devices is not None and devices.strip() != "":
+            kw["devices"] = devices.strip()
+        self._model = BGEM3FlagModel(model_path, **kw)
+        self._maybe_warmup_mps()
+
+    def _maybe_warmup_mps(self) -> None:
+        """MPS 下 FlagEmbedding 首次 encode 才把权重迁到 GPU；启动时跑一次短 query 避免首条在线请求承担迁移耗时。"""
+        td = getattr(self._model, "target_devices", None) or []
+        if not any("mps" in str(d) for d in td):
+            return
+        _ = self.embed_query("ping")
 
     def _set_dim_if_needed(self, dim: int) -> None:
         if self._dense_dim is None:

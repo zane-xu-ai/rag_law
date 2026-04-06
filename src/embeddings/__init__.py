@@ -15,6 +15,7 @@ def build_embedder(settings: Settings) -> EmbeddingBackend:
     return BgeM3EmbeddingBackend(
         model_path=settings.bge_m3_path,
         batch_size=settings.embedding_batch_size,
+        devices=settings.embedding_device,
     )
 
 

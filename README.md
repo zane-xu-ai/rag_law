@@ -25,7 +25,7 @@ pytest
 
 **LLM（OpenAI 兼容）**：连通性冒烟依赖可选组 **`llm`**（`openai`）。安装：`uv sync --extra llm`；若需同时保留向量编码依赖，可 `uv sync --extra embedding --extra llm`。配置好 `.env` 中 `MODEL_API_KEY`、`MODEL_BASE_URL`、`MODEL_NAME` 后执行 `uv run python scripts/llm_smoke_test.py`（会发起一次极短补全，产生少量费用）；仅检查配置加载可用 `uv run python scripts/llm_smoke_test.py --dry-run`。
 
-**向量（BGE-M3）**：`src/embeddings` 依赖可选组 **`embedding`**（`FlagEmbedding`、`torch`、`numpy` 等；**`transformers` 锁定为 4.x**，与当前 `FlagEmbedding` 版本兼容）。仅跑切分/配置时可不装；需要本地编码时请执行 `uv sync --extra embedding`（默认已含 `dev`+`web`）或 `pip install -e ".[dev,web,embedding]"`。
+**向量（BGE-M3）**：`src/embeddings` 依赖可选组 **`embedding`**（`FlagEmbedding`、`torch`、`numpy` 等；**`transformers` 锁定为 4.x**，与当前 `FlagEmbedding` 版本兼容）。仅跑切分/配置时可不装；需要本地编码时请执行 `uv sync --extra embedding`（默认已含 `dev`+`web`）或 `pip install -e ".[dev,web,embedding]"`。Apple Silicon 上是否走 **MPS**、以及编码前后参数所在设备，可运行 `uv run python scripts/bge_m3_device_check.py`（需 `.env` 中 `BGE_M3_PATH` 等到位才会加载模型）。**CPU 与 MPS 各约 10 条短句的耗时对比**（会加载两次模型）：`uv run python scripts/bge_m3_cpu_vs_mps_bench.py`。可选环境变量 **`BGE_EMBEDDING_DEVICE`** 强制设备（见 `.env.example`）。**MPS** 下构造后会做一次短句预热，避免首条在线请求承担权重从 CPU 迁到 GPU 的延迟。
 
 **使用 uv 时**：`[dependency-groups]` 含 **`dev`**（pytest 等）与 **`web`**（FastAPI 等，跑 chunking WebUI 测试需要），**[tool.uv] default-groups** 为 `["dev","web"]`，因此 **`uv sync` 与 CI 的 `pip install -e ".[dev,web]"` 等价**，无需再写 `--extra dev` / `--extra web`。请同步并**用虚拟环境里的 pytest**，不要依赖 conda PATH 上的全局 `pytest`：
 

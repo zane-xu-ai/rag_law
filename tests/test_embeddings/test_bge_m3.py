@@ -49,6 +49,29 @@ class _FakeBGEM3ModelDimMismatch:
         }
 
 
+class _FakeBGEM3ModelMpsWarmup:
+    """带 MPS target_devices，用于验证构造时预热会调用 encode_queries。"""
+
+    def __init__(self, model_path: str, **kwargs: object) -> None:
+        del model_path, kwargs
+        self.target_devices = ["mps:0"]
+        self.encode_queries_calls = 0
+
+    def encode_queries(self, queries: object, **kwargs: object) -> dict[str, list[list[float]]]:
+        del kwargs
+        self.encode_queries_calls += 1
+        return {"dense_vecs": [[3.0, 4.0, 0.0, 0.0]]}
+
+    def encode_corpus(self, corpus: object, **kwargs: object) -> dict[str, list[list[float]]]:
+        del kwargs
+        if isinstance(corpus, str):
+            rows = [corpus]
+        else:
+            rows = list(corpus)
+        n = len(rows)
+        return {"dense_vecs": [[3.0, 4.0, 0.0, 0.0] for _ in range(n)]}
+
+
 class _FakeBGEM3Model:
     """模拟 FlagEmbedding：query 与 corpus 分路，返回未归一化向量（嵌套 list，无需顶层 import numpy）。"""
 
@@ -153,6 +176,20 @@ def test_dense_dimension_before_encode(
     b = BgeM3EmbeddingBackend("/x", batch_size=8)
     with pytest.raises(RuntimeError, match="dense_dimension"):
         _ = b.dense_dimension
+
+
+def test_mps_warmup_calls_encode_queries_on_init(
+    fake_torch: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del fake_torch
+    monkeypatch.setattr(
+        "embeddings.bge_m3._load_bgem3_class",
+        lambda: _FakeBGEM3ModelMpsWarmup,
+    )
+    b = BgeM3EmbeddingBackend("/m", batch_size=8)
+    assert b._model.encode_queries_calls >= 1
+    assert b.dense_dimension == 4
 
 
 def test_batch_size_must_be_positive(

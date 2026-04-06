@@ -122,6 +122,11 @@ class Settings(BaseSettings):
 
     # --- 向量模型 ---
     bge_m3_path: str = Field(..., validation_alias="BGE_M3_PATH")
+    embedding_device: Optional[str] = Field(
+        default=None,
+        validation_alias="BGE_EMBEDDING_DEVICE",
+        description="可选：强制编码设备，如 cpu、mps、cuda:0；未设置时由 FlagEmbedding 自动选择",
+    )
     embedding_batch_size: int = Field(
         default=32,
         ge=1,
