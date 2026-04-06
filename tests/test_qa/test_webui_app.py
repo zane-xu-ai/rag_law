@@ -6,11 +6,53 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+class _FakeEmbedder:
+    dense_dimension = 4
+
+    def embed_query(self, q: str) -> list[float]:
+        return [0.25, 0.25, 0.25, 0.25]
+
+
+class _FakeOpenAI:
+    def __init__(self, **kw: object) -> None:
+        pass
+
+
+def _qa_webui_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """与 `test_streaming` 一致，满足 `get_settings()` 必填项。"""
+    for key, value in {
+        "MODEL_API_KEY": "test-model-api-key",
+        "MODEL_BASE_URL": "https://dashscope.example.com/compatible-mode/v1",
+        "MODEL_NAME": "qwen-test",
+        "ES_HOST": "localhost",
+        "ES_PORT": "9200",
+        "ES_INDEX": "test_index",
+        "BGE_M3_PATH": "/opt/models/bge-m3",
+        "CHUNK_SIZE": "800",
+        "CHUNK_OVERLAP": "50",
+        "RETRIEVAL_K": "3",
+    }.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("PARENT_CHUNK_SIZE", raising=False)
+    monkeypatch.delenv("ES_USER", raising=False)
+    monkeypatch.delenv("ES_PASSWORD", raising=False)
+
+
 @pytest.fixture
-def client() -> TestClient:
+def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    """lifespan 会加载 embedder/ES/OpenAI；用 mock 避免真实 BGE 与网络。"""
+    _qa_webui_env(monkeypatch)
+    monkeypatch.setattr("embeddings.build_embedder", lambda s: _FakeEmbedder())
+    monkeypatch.setattr("es_store.client.elasticsearch_client", lambda s: object())
+    monkeypatch.setattr("openai.OpenAI", _FakeOpenAI)
+    from conf.settings import get_settings
+
+    get_settings.cache_clear()
     from qa.webui.app import app
 
-    return TestClient(app)
+    with TestClient(app) as tc:
+        yield tc
 
 
 def test_health(client: TestClient) -> None:

@@ -19,6 +19,9 @@ def stream_qa_events(
     query: str,
     *,
     settings: Optional[Any] = None,
+    embedder: Optional[Any] = None,
+    es_client: Optional[Any] = None,
+    openai_client: Optional[Any] = None,
     k: int | None = None,
     max_tokens: int = 2048,
     conversation_id: str | None = None,
@@ -27,6 +30,9 @@ def stream_qa_events(
 
     计时起点 `t0`：进入本生成器后、发出 `start` 事件之前的第一时刻。
     阶段 id 对齐 doc/plan/v1.0.7-qa-webui-plan.md §4。
+
+    若传入 ``embedder`` / ``es_client`` / ``openai_client``（如 WebUI lifespan 单例），
+    对应阶段 ``elapsed_ms`` 记为 0 并带 ``cached: true``，避免每请求重建模型与客户端。
     """
     from conf.settings import get_settings
 
@@ -56,6 +62,21 @@ def stream_qa_events(
             "offset_ms": _ms(offset),
         }
 
+    def phase_cached(phase_id: str) -> dict[str, Any]:
+        nonlocal step_start
+        now = _now()
+        offset = now - t0
+        step_start = now
+        timings[phase_id] = 0.0
+        return {
+            "type": "phase",
+            "phase": phase_id,
+            "status": "end",
+            "elapsed_ms": 0.0,
+            "offset_ms": _ms(offset),
+            "cached": True,
+        }
+
     cid = conversation_id
     yield {
         "type": "start",
@@ -67,15 +88,21 @@ def stream_qa_events(
         settings = get_settings()
     yield phase_end("settings_resolve")
 
-    embedder = build_embedder(settings)
-    yield phase_end("embedder_acquire")
+    if embedder is None:
+        embedder = build_embedder(settings)
+        yield phase_end("embedder_acquire")
+    else:
+        yield phase_cached("embedder_acquire")
 
     k_eff = settings.retrieval_k if k is None else k
     qv = embedder.embed_query(query)
     yield phase_end("embed_query")
 
-    es_client = elasticsearch_client(settings)
-    yield phase_end("es_client_acquire")
+    if es_client is None:
+        es_client = elasticsearch_client(settings)
+        yield phase_end("es_client_acquire")
+    else:
+        yield phase_cached("es_client_acquire")
 
     store = EsChunkStore(
         es_client,
@@ -116,11 +143,15 @@ def stream_qa_events(
     t_rag_end = _now()
     rag_prefill_ms = _ms(t_rag_end - t0)
 
-    oai = OpenAI(
-        api_key=settings.model_api_key,
-        base_url=settings.model_base_url,
-    )
-    yield phase_end("llm_client_ready")
+    if openai_client is None:
+        oai = OpenAI(
+            api_key=settings.model_api_key,
+            base_url=settings.model_base_url,
+        )
+        yield phase_end("llm_client_ready")
+    else:
+        oai = openai_client
+        yield phase_cached("llm_client_ready")
 
     t_before_create = _now()
     stream = oai.chat.completions.create(

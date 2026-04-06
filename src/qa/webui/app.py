@@ -1,10 +1,15 @@
-"""QA WebUI：POST `/api/qa/stream` 返回 SSE；静态页挂载于 `/`。"""
+"""QA WebUI：POST `/api/qa/stream` 返回 SSE；静态页挂载于 `/`。
+
+启动时注入 ``embedder`` / ``es_client`` / ``openai_client`` 单例（见 lifespan），避免每请求重建模型与客户端。
+"""
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -23,7 +28,37 @@ class QAStreamBody(BaseModel):
     conversation_id: str | None = Field(default=None, max_length=128)
 
 
-app = FastAPI(title="rag-law QA", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from conf.settings import get_settings
+
+    from embeddings import build_embedder
+    from es_store.client import elasticsearch_client
+
+    get_settings.cache_clear()
+    settings = get_settings()
+    app.state.settings = settings
+    app.state.embedder = build_embedder(settings)
+    app.state.es_client = elasticsearch_client(settings)
+    import importlib.util
+
+    if importlib.util.find_spec("openai") is not None:
+        from openai import OpenAI
+
+        app.state.openai_client = OpenAI(
+            api_key=settings.model_api_key,
+            base_url=settings.model_base_url,
+        )
+    else:
+        app.state.openai_client = None
+    yield
+
+
+app = FastAPI(
+    title="rag-law QA",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 
 
 @app.get("/api/health")
@@ -32,7 +67,7 @@ def health() -> dict[str, str]:
 
 
 @app.post("/api/qa/stream")
-def api_qa_stream(body: QAStreamBody) -> StreamingResponse:
+def api_qa_stream(request: Request, body: QAStreamBody) -> StreamingResponse:
     import importlib.util
 
     if importlib.util.find_spec("openai") is None:
@@ -40,10 +75,20 @@ def api_qa_stream(body: QAStreamBody) -> StreamingResponse:
             status_code=503,
             detail="未安装 openai，请执行: uv sync --extra llm",
         )
+    oai: Any = getattr(request.app.state, "openai_client", None)
+    if oai is None:
+        raise HTTPException(
+            status_code=503,
+            detail="OpenAI 客户端未初始化（启动时未安装 openai）",
+        )
 
     def sse_gen():
         for ev in stream_qa_events(
             body.query.strip(),
+            settings=request.app.state.settings,
+            embedder=request.app.state.embedder,
+            es_client=request.app.state.es_client,
+            openai_client=oai,
             k=body.k,
             max_tokens=body.max_tokens,
             conversation_id=body.conversation_id,

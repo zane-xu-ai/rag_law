@@ -126,3 +126,63 @@ def test_stream_qa_events_emits_phases_done_and_ttft(monkeypatch: pytest.MonkeyP
     assert "settings_resolve" in done["timings"]
     assert "embed_query" in done["timings"]
     assert "llm_stream_open" in done["timings"]
+
+
+def test_stream_qa_events_injected_clients_mark_cached(monkeypatch: pytest.MonkeyPatch) -> None:
+    """注入 embedder / es / openai 时对应阶段 cached 且 embedder_acquire 为 0。"""
+    _base_env(monkeypatch)
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    class FakeEmbedder:
+        dense_dimension = 4
+
+        def embed_query(self, q: str) -> list[float]:
+            return [0.25, 0.25, 0.25, 0.25]
+
+    class FakeStore:
+        def __init__(self, *a: Any, **k: Any) -> None:
+            pass
+
+        def search_knn(self, qv: list[float], k: int) -> list[dict[str, Any]]:
+            return []
+
+    class FakeCompletions:
+        @staticmethod
+        def create(**kw: Any) -> Any:
+            return iter(())
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeOpenAI:
+        def __init__(self, **kw: Any) -> None:
+            pass
+
+        chat = FakeChat()
+
+    fake_openai_mod = ModuleType("openai")
+    fake_openai_mod.OpenAI = FakeOpenAI
+    monkeypatch.setitem(sys.modules, "openai", fake_openai_mod)
+
+    monkeypatch.setattr("es_store.store.EsChunkStore", FakeStore)
+
+    from qa.streaming import stream_qa_events
+
+    events = list(
+        stream_qa_events(
+            "q",
+            settings=settings,
+            embedder=FakeEmbedder(),
+            es_client=object(),
+            openai_client=FakeOpenAI(),
+        )
+    )
+    phases = [e for e in events if e.get("type") == "phase"]
+    emb_ev = [e for e in phases if e.get("phase") == "embedder_acquire"][0]
+    assert emb_ev.get("cached") is True
+    assert emb_ev["elapsed_ms"] == 0.0
+    es_ev = [e for e in phases if e.get("phase") == "es_client_acquire"][0]
+    assert es_ev.get("cached") is True
+    llm_ev = [e for e in phases if e.get("phase") == "llm_client_ready"][0]
+    assert llm_ev.get("cached") is True
