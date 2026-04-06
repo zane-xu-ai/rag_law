@@ -2,6 +2,7 @@
 data/
 model/
 log/
+tmp/
 .DS_Store
 .idea
 __pycache__/

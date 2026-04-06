@@ -19,6 +19,8 @@ pytest
 
 **入库（MVP）**：`data/*.md` 切分 → BGE-M3 → 写入 `ES_INDEX`（默认全量重建索引）。需已 `uv sync --extra embedding` 且 ES 可达。示例：`uv run python scripts/rag_ingest.py --dry-run`（仅统计块数）、`uv run python scripts/rag_ingest.py`。说明见 [`doc/plan/v1.0.4-ingest-plan.md`](doc/plan/v1.0.4-ingest-plan.md)（脚本名 **`rag_ingest.py`**，勿用 `ingest.py`，以免与 `src/ingest` 包冲突）。
 
+**导出 ES 块到 tmp**：将索引中与 `data/*.md` 同名的文档块读出，写入 `tmp/`（每块一行，块间空一行，相邻块重叠段用「【】」标出）：`uv run python scripts/es_dump_chunks_to_tmp.py`。
+
 **向量（BGE-M3）**：`src/embeddings` 依赖可选组 **`embedding`**（`FlagEmbedding`、`torch`、`numpy` 等；**`transformers` 锁定为 4.x**，与当前 `FlagEmbedding` 版本兼容）。仅跑切分/配置时可不装；需要本地编码时请执行 `uv sync --extra embedding`（默认已含 `dev`+`web`）或 `pip install -e ".[dev,web,embedding]"`。
 
 **使用 uv 时**：`[dependency-groups]` 含 **`dev`**（pytest 等）与 **`web`**（FastAPI 等，跑 chunking WebUI 测试需要），**[tool.uv] default-groups** 为 `["dev","web"]`，因此 **`uv sync` 与 CI 的 `pip install -e ".[dev,web]"` 等价**，无需再写 `--extra dev` / `--extra web`。请同步并**用虚拟环境里的 pytest**，不要依赖 conda PATH 上的全局 `pytest`：
