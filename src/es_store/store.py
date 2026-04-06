@@ -6,6 +6,8 @@ from typing import Any
 
 from elasticsearch.helpers import bulk
 
+from es_store.chunk_defaults import apply_chunk_source_defaults
+
 
 def chunk_document_id(source_file: str, chunk_index: int) -> str:
     """稳定文档 _id：便于幂等 bulk。"""
@@ -50,25 +52,28 @@ class EsChunkStore:
     def bulk_index_chunks(self, documents: list[dict[str, Any]]) -> tuple[int, list[Any]]:
         """批量索引 chunk 文档。每条须含 `text`、`embedding`、元数据字段；`embedding` 长度须等于 `dense_dims`。
 
+        写入前会经 `apply_chunk_source_defaults` 补齐 `chunk_type`、`mime_type` 等与 `TextChunk` 对齐的默认值。
+
         返回 `(成功条数, bulk 错误列表)`。
         """
         actions = []
         for doc in documents:
-            emb = doc.get("embedding")
+            src = apply_chunk_source_defaults(doc)
+            emb = src.get("embedding")
             if emb is None or len(emb) != self._dense_dims:
                 raise ValueError(
                     "embedding 须为长度 %s 的向量，得到 %s"
                     % (self._dense_dims, None if emb is None else len(emb))
                 )
-            sf = doc["source_file"]
-            ci = int(doc["chunk_index"])
+            sf = src["source_file"]
+            ci = int(src["chunk_index"])
             _id = chunk_document_id(sf, ci)
             actions.append(
                 {
                     "_op_type": "index",
                     "_index": self._index_name,
                     "_id": _id,
-                    "_source": doc,
+                    "_source": src,
                 }
             )
         if not actions:

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from es_store.chunk_defaults import apply_chunk_source_defaults
 from es_store.mapping import chunk_index_mappings
 from es_store.store import EsChunkStore, chunk_document_id
 
@@ -14,6 +15,45 @@ def test_chunk_index_mappings_dims() -> None:
     m = chunk_index_mappings(128)
     assert m["properties"]["embedding"]["dims"] == 128
     assert m["properties"]["embedding"]["similarity"] == "cosine"
+    assert m["properties"]["chunk_type"]["type"] == "keyword"
+    assert m["properties"]["extra"]["type"] == "flattened"
+
+
+def test_apply_chunk_source_defaults() -> None:
+    d = apply_chunk_source_defaults(
+        {
+            "text": "a",
+            "embedding": [1.0],
+            "source_file": "f.md",
+            "chunk_index": 0,
+            "char_start": 0,
+            "char_end": 1,
+        }
+    )
+    assert d["chunk_type"] == "text"
+    assert d["mime_type"] == "text/markdown"
+    assert d["doc_type"] == "law_md"
+    assert d["domain"] == "law"
+    assert d["source_path"] == ""
+    assert d["source_doc_id"] == ""
+    assert d["source_sha256"] == ""
+
+
+def test_apply_chunk_source_defaults_preserves_explicit() -> None:
+    d = apply_chunk_source_defaults(
+        {
+            "text": "a",
+            "embedding": [1.0],
+            "source_file": "f.md",
+            "chunk_index": 0,
+            "char_start": 0,
+            "char_end": 1,
+            "chunk_type": "table",
+            "source_doc_id": "doc-1",
+        }
+    )
+    assert d["chunk_type"] == "table"
+    assert d["source_doc_id"] == "doc-1"
 
 
 def test_chunk_index_mappings_rejects_zero() -> None:
@@ -126,6 +166,38 @@ def test_bulk_index_chunks_success(monkeypatch: pytest.MonkeyPatch) -> None:
     n, errs = store.bulk_index_chunks(docs)
     assert n == 2
     assert errs == []
+
+
+def test_bulk_index_chunks_applies_defaults_to_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    from es_store import store as store_mod
+
+    actions: list = []
+
+    def _capture_bulk(_client: object, acts: list, **kwargs: object) -> tuple[int, list]:
+        actions.extend(acts)
+        return len(acts), []
+
+    monkeypatch.setattr(store_mod, "bulk", _capture_bulk)
+    client = MagicMock()
+    store = EsChunkStore(client, "idx", dense_dims=2)
+    store.bulk_index_chunks(
+        [
+            {
+                "text": "a",
+                "embedding": [1.0, 0.0],
+                "source_file": "f.md",
+                "source_path": "data/f.md",
+                "chunk_index": 0,
+                "char_start": 0,
+                "char_end": 1,
+            }
+        ]
+    )
+    assert len(actions) == 1
+    src = actions[0]["_source"]
+    assert src["chunk_type"] == "text"
+    assert src["mime_type"] == "text/markdown"
+    assert src["source_doc_id"] == ""
 
 
 def test_refresh() -> None:

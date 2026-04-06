@@ -1,4 +1,4 @@
-"""chunk 索引 mapping：`dense_vector` 与 MVP §6 字段对齐。"""
+"""chunk 索引 mapping：`dense_vector`、偏移与溯源元数据（见 doc/plan/v1.0.3-es-store-plan.md §4）。"""
 
 from __future__ import annotations
 
@@ -23,5 +23,14 @@ def chunk_index_mappings(dims: int) -> dict[str, Any]:
             "chunk_index": {"type": "integer"},
             "char_start": {"type": "integer"},
             "char_end": {"type": "integer"},
+            "chunk_type": {"type": "keyword"},
+            "mime_type": {"type": "keyword"},
+            "doc_type": {"type": "keyword"},
+            "domain": {"type": "keyword"},
+            "source_doc_id": {"type": "keyword"},
+            "source_sha256": {"type": "keyword"},
+            "page_start": {"type": "integer"},
+            "page_end": {"type": "integer"},
+            "extra": {"type": "flattened"},
         }
     }
