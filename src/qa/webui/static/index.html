@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RAG 法律问答</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #3fb950;
+      --border: #30363d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 1rem 1.25rem 2rem;
+      max-width: 52rem;
+      margin-inline: auto;
+    }
+    h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
+    .hint { color: var(--muted); font-size: 0.875rem; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.35rem; }
+    textarea {
+      width: 100%;
+      min-height: 5rem;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+      font-size: 0.95rem;
+      resize: vertical;
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 0.75rem; }
+    input[type="number"] {
+      width: 6rem;
+      padding: 0.45rem 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+    }
+    button {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 6px;
+      background: #238636;
+      color: #fff;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .metrics {
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.9rem;
+    }
+    .metrics strong { color: var(--accent); }
+    section { margin-top: 1.25rem; }
+    section h2 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+    #phases {
+      font-family: ui-monospace, monospace;
+      font-size: 0.78rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 0.75rem;
+      background: var(--panel);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      max-height: 14rem;
+      overflow: auto;
+    }
+    #retrieval {
+      font-size: 0.85rem;
+      padding: 0.75rem;
+      background: var(--panel);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      max-height: 12rem;
+      overflow: auto;
+    }
+    #answer {
+      min-height: 4rem;
+      padding: 0.75rem 1rem;
+      background: var(--panel);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .err { color: #f85149; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h1>RAG 法律问答</h1>
+  <p class="hint">单轮提问；流式输出。需本地 ES、BGE-M3、<code>MODEL_*</code> 已配置（见 README）。</p>
+
+  <label for="q">问题</label>
+  <textarea id="q" placeholder="输入你的法律相关问题…"></textarea>
+  <div class="row">
+    <label>k（可选）<input type="number" id="k" min="1" placeholder="默认 RETRIEVAL_K" /></label>
+    <button type="button" id="go">提交</button>
+  </div>
+  <div class="metrics" id="metrics" hidden>
+    首字延迟（TTFT）：<strong id="ttft">—</strong> ms · 全程：<strong id="total">—</strong> ms · RAG 预填：<strong id="ragpre">—</strong> ms
+  </div>
+  <div class="err" id="err"></div>
+
+  <section>
+    <h2>阶段耗时</h2>
+    <div id="phases">（尚无）</div>
+  </section>
+  <section>
+    <h2>检索</h2>
+    <div id="retrieval">（尚无）</div>
+  </section>
+  <section>
+    <h2>回答</h2>
+    <div id="answer"></div>
+  </section>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const phasesEl = $("phases");
+    const retrievalEl = $("retrieval");
+    const answerEl = $("answer");
+    const errEl = $("err");
+    const metricsEl = $("metrics");
+
+    function parseSSEChunk(buffer, line) {
+      if (!line.startsWith("data:")) return { events: [], rest: buffer + line + "\n" };
+      const jsonStr = line.slice(5).trim();
+      if (!jsonStr) return { events: [], rest: buffer };
+      try {
+        const ev = JSON.parse(jsonStr);
+        return { events: [ev], rest: "" };
+      } catch {
+        return { events: [], rest: buffer + line + "\n" };
+      }
+    }
+
+    async function run() {
+      const query = $("q").value.trim();
+      if (!query) {
+        errEl.textContent = "请输入问题";
+        return;
+      }
+      errEl.textContent = "";
+      $("go").disabled = true;
+      phasesEl.textContent = "";
+      retrievalEl.textContent = "…";
+      answerEl.textContent = "";
+      metricsEl.hidden = true;
+
+      const body = { query };
+      const kVal = $("k").value.trim();
+      if (kVal) body.k = parseInt(kVal, 10);
+
+      const lines = [];
+      const phaseLines = [];
+
+      try {
+        const res = await fetch("/api/qa/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(res.status + " " + t);
+        }
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const parts = buf.split("\n");
+          buf = parts.pop() || "";
+          for (const line of parts) {
+            if (!line.startsWith("data:")) continue;
+            const jsonStr = line.slice(5).trim();
+            if (!jsonStr) continue;
+            let ev;
+            try {
+              ev = JSON.parse(jsonStr);
+            } catch {
+              continue;
+            }
+            if (ev.type === "phase") {
+              phaseLines.push(
+                ev.phase + "  " + ev.elapsed_ms + " ms  (offset " + ev.offset_ms + " ms)"
+              );
+              phasesEl.textContent = phaseLines.join("\n");
+            } else if (ev.type === "retrieval") {
+              retrievalEl.textContent =
+                "命中 " +
+                ev.hit_count +
+                " 条\n" +
+                JSON.stringify(ev.hits, null, 2);
+            } else if (ev.type === "delta") {
+              answerEl.textContent += ev.content;
+            } else if (ev.type === "metrics") {
+              metricsEl.hidden = false;
+              $("ttft").textContent = String(ev.ttft_ms);
+              $("ragpre").textContent = String(ev.rag_prefill_ms);
+            } else if (ev.type === "done") {
+              metricsEl.hidden = false;
+              if (ev.ttft_ms != null) $("ttft").textContent = String(ev.ttft_ms);
+              $("total").textContent = String(ev.total_ms);
+              $("ragpre").textContent = String(ev.rag_prefill_ms);
+            } else if (ev.type === "error") {
+              errEl.textContent = ev.message || "error";
+            }
+          }
+        }
+      } catch (e) {
+        errEl.textContent = String(e.message || e);
+      } finally {
+        $("go").disabled = false;
+      }
+    }
+
+    $("go").addEventListener("click", run);
+  </script>
+</body>
+</html>

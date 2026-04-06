@@ -39,6 +39,8 @@ uv run pytest --cov=conf --cov=embeddings --cov=es_store --cov=qa --cov-report=t
 
 **切分预览 Web（可选）**：本地人工验收滑窗效果，见 [`doc/chunk/Chunking 切分效果人工测试v01.md`](doc/chunk/Chunking%20切分效果人工测试v01.md)。可选勾选「句边界对齐」，规则见 [`doc/chunk/句边界对齐切分.md`](doc/chunk/句边界对齐切分.md)。默认已含 `web` 依赖；执行 `uv run python -m chunking.webui`，浏览器访问 `http://127.0.0.1:8765/`（无鉴权，仅本机调试）。等价命令：`uv run uvicorn chunking.webui.app:app --host 127.0.0.1 --port 8765`。
 
+**问答 Web（可选）**：单轮 RAG、SSE 流式输出、分阶段耗时与 TTFT/总耗时。见 [`doc/plan/v1.0.7-qa-webui-plan.md`](doc/plan/v1.0.7-qa-webui-plan.md)。需 `uv sync --extra embedding --extra llm`。启动：`uv run uvicorn qa.webui.app:app --host 127.0.0.1 --port 8766`，浏览器打开 `http://127.0.0.1:8766/`。API：`POST /api/qa/stream`（JSON：`query`、`k` 可选、`max_tokens`、`conversation_id` 预留多轮）。
+
 或 `source .venv/bin/activate` 后再执行 `pytest ...`。若直接输入 `pytest` 而 `command -v pytest` 指向 `/opt/anaconda3/bin/pytest`，即使用 `uv add pytest-cov` 装进了 `.venv`，也会出现 `--cov` 无法识别（实际跑的是 conda 的 pytest）。
 
 ---
