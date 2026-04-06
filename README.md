@@ -15,15 +15,19 @@ pip install -e ".[dev]"
 pytest
 ```
 
-**使用 uv 时**：开发依赖在 `[project.optional-dependencies] dev`。请同步并**用虚拟环境里的 pytest**，不要依赖 conda PATH 上的全局 `pytest`：
+**向量（BGE-M3）**：`src/embeddings` 依赖可选组 **`embedding`**（`FlagEmbedding`、`torch`、`numpy`）。仅跑切分/配置时可不装；需要本地编码时请执行 `uv sync --extra embedding`（默认已含 `dev`+`web`）或 `pip install -e ".[dev,web,embedding]"`。
+
+**使用 uv 时**：`[dependency-groups]` 含 **`dev`**（pytest 等）与 **`web`**（FastAPI 等，跑 chunking WebUI 测试需要），**[tool.uv] default-groups** 为 `["dev","web"]`，因此 **`uv sync` 与 CI 的 `pip install -e ".[dev,web]"` 等价**，无需再写 `--extra dev` / `--extra web`。请同步并**用虚拟环境里的 pytest**，不要依赖 conda PATH 上的全局 `pytest`：
 
 ```bash
-uv sync --extra dev
+uv sync
 uv run pytest
-uv run pytest --cov=conf --cov-report=term-missing --cov-report=xml --cov-fail-under=90
+uv run pytest --cov=conf --cov=embeddings --cov-report=term-missing --cov-report=xml --cov-fail-under=90
 ```
 
-**切分预览 Web（可选）**：本地人工验收滑窗效果，见 [`doc/chunk/Chunking 切分效果人工测试v01.md`](doc/chunk/Chunking%20切分效果人工测试v01.md)。可选勾选「句边界对齐」，规则见 [`doc/chunk/句边界对齐切分.md`](doc/chunk/句边界对齐切分.md)。需额外安装 `web` 依赖：`uv sync --extra dev --extra web`，再执行 `uv run python -m chunking.webui`，浏览器访问 `http://127.0.0.1:8765/`（无鉴权，仅本机调试）。等价命令：`uv run uvicorn chunking.webui.app:app --host 127.0.0.1 --port 8765`。
+说明：若只执行裸 `uv sync` 且此前未配置 `default-groups`，会只装核心依赖，**不会**装 `dev`，`pytest` 会被卸掉；若仍出现该情况，请拉取本仓库最新 `pyproject.toml` 后再 `uv sync`。
+
+**切分预览 Web（可选）**：本地人工验收滑窗效果，见 [`doc/chunk/Chunking 切分效果人工测试v01.md`](doc/chunk/Chunking%20切分效果人工测试v01.md)。可选勾选「句边界对齐」，规则见 [`doc/chunk/句边界对齐切分.md`](doc/chunk/句边界对齐切分.md)。默认已含 `web` 依赖；执行 `uv run python -m chunking.webui`，浏览器访问 `http://127.0.0.1:8765/`（无鉴权，仅本机调试）。等价命令：`uv run uvicorn chunking.webui.app:app --host 127.0.0.1 --port 8765`。
 
 或 `source .venv/bin/activate` 后再执行 `pytest ...`。若直接输入 `pytest` 而 `command -v pytest` 指向 `/opt/anaconda3/bin/pytest`，即使用 `uv add pytest-cov` 装进了 `.venv`，也会出现 `--cov` 无法识别（实际跑的是 conda 的 pytest）。
 
@@ -33,7 +37,7 @@ uv run pytest --cov=conf --cov-report=term-missing --cov-report=xml --cov-fail-u
 
 ```bash
 pip install -e ".[dev]"
-pytest --cov=conf --cov-report=term-missing --cov-report=xml --cov-fail-under=90
+pytest --cov=conf --cov=embeddings --cov-report=term-missing --cov-report=xml --cov-fail-under=90
 ```
 
 - 配置相关测试位于 [`tests/test_conf/test_settings.py`](tests/test_conf/test_settings.py)（对应 `src/conf/settings.py`）。目录故意命名为 `test_conf`，避免使用 `tests/conf/` 与 Python 包 `conf` 同名导致导入被遮蔽。

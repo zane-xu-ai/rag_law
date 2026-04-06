@@ -14,10 +14,17 @@ dependencies = [
     "python-dotenv>=1,<2",
 ]
 
+# pip：`pip install -e ".[dev]"` 读此处；与下方 [dependency-groups].dev 保持版本一致。
 [project.optional-dependencies]
 dev = [
     "pytest>=8,<9",
     "pytest-cov>=5,<6",
+    "numpy>=1.24,<3",
+]
+embedding = [
+    "FlagEmbedding>=1.2,<2",
+    "numpy>=1.24,<3",
+    "torch>=2,<3",
 ]
 web = [
     "fastapi>=0.115,<1",
@@ -26,12 +33,33 @@ web = [
     "python-multipart>=0.0.9,<1",
 ]
 
+# uv：裸 `uv sync` 默认同步这些组（与 CI 的 pip install -e ".[dev,web]" 一致）。
+# web：chunking WebUI 测试需要 fastapi；与 optional-dependencies.web 保持版本一致。
+[dependency-groups]
+dev = [
+    "pytest>=8,<9",
+    "pytest-cov>=5,<6",
+    "numpy>=1.24,<3",
+]
+web = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.30,<1",
+    "httpx>=0.27,<1",
+    "python-multipart>=0.0.9,<1",
+]
+
+[tool.uv]
+default-groups = ["dev", "web"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "integration: 需本地模型或重依赖，默认不强制在 CI 跑",
+]
 # 覆盖率依赖 pytest-cov（见 dev 可选依赖）。默认不加 --cov，避免仅安装 pytest 时报错。
 # 带覆盖率与 90% 门槛：`pytest --cov=conf --cov-report=term-missing --cov-report=xml --cov-fail-under=90`
 
@@ -44,6 +72,7 @@ omit = ["*/tests/*"]
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
+    "^\\s*\\.\\.\\.\\s*$",
 ]
 precision = 1
-include = ["*/conf/*"]
+include = ["*/conf/*", "*/embeddings/*"]

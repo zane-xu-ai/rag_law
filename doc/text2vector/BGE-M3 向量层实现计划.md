@@ -4,7 +4,7 @@
 | --- | --- |
 | 文档位置 | `doc/text2vector/BGE-M3 向量层实现计划.md` |
 | 关联计划 | [v1.0.0-rag-law-mvp-plan.md](../plan/v1.0.0-rag-law-mvp-plan.md) 第 9 节「向量」项 |
-| 状态 | 待实现 |
+| 状态 | 向量层已实现（`src/embeddings`）；ES 写入与检索待后续 |
 
 ---
 
@@ -107,12 +107,12 @@ flowchart TB
 
 ## 7. 实施任务清单
 
-- [ ] `pyproject.toml`：增加 `embedding` 可选依赖与说明。
-- [ ] 实现 `src/embeddings`：`EmbeddingBackend`、`BgeM3EmbeddingBackend`、L2 归一化、query/document 分路编码。
-- [ ] 预留 `EmbeddingVector`（dense + 可选 sparse）与 `build_embedder(settings)`。
-- [ ] 测试：stub 单测 + 可选真实模型集成测试。
-- [ ] `.env.example`（及必要时 `README`）：`VECTOR_SIMILARITY`、安装 extras 提示。
-- [ ] MVP 计划 [v1.0.0-rag-law-mvp-plan.md](../plan/v1.0.0-rag-law-mvp-plan.md) 中「向量」项完成后勾选，并可附一句：归一化策略与 ES `dense_vector` 的 cosine 一致。
+- [x] `pyproject.toml`：增加 `embedding` 可选依赖与说明。
+- [x] 实现 `src/embeddings`：`EmbeddingBackend`、`BgeM3EmbeddingBackend`、L2 归一化、query/document 分路编码（`encode_queries` / `encode_corpus`）。
+- [x] 预留 `EmbeddingVector`（dense + 可选 sparse）与 `build_embedder(settings)`。
+- [x] 测试：`tests/test_embeddings` stub 单测 + 可选集成（`RUN_BGE_M3_INTEGRATION=1`）。
+- [x] `.env.example`（及 `README`）：`VECTOR_SIMILARITY`、安装 extras 提示。
+- [x] MVP 计划 [v1.0.0-rag-law-mvp-plan.md](../plan/v1.0.0-rag-law-mvp-plan.md) 中「向量」项已勾选（归一化与 ES `dense_vector` 的 cosine 一致）。
 
 ---
 
