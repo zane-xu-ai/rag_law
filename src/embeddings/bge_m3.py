@@ -43,7 +43,8 @@ def _load_bgem3_class():
         from FlagEmbedding import BGEM3FlagModel
     except ImportError as e:
         raise ImportError(
-            "BGE-M3 需要 FlagEmbedding。请安装：pip install -e '.[embedding]'"
+            "BGE-M3 需要 FlagEmbedding 及兼容依赖（pyproject 中 [embedding] 锁定 transformers<5，避免与 FlagEmbedding 1.3.x 冲突）。"
+            " 请执行：uv sync --extra embedding"
         ) from e
     return BGEM3FlagModel
 
