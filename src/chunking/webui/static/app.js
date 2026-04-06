@@ -117,35 +117,6 @@
 
       meta.innerHTML = `${tag}#${c.index} &nbsp; char [${c.char_start}, ${c.char_end}) &nbsp;· 本块 ${pieceLen} 字${overlapPart}`;
 
-      if (c.index === 1) {
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7448/ingest/c667c778-5edf-4f19-bbf5-51f90041f32f",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Debug-Session-Id": "4a4a47",
-            },
-            body: JSON.stringify({
-              sessionId: "4a4a47",
-              hypothesisId: "H4",
-              location: "app.js:renderChunks",
-              message: "chunk1_display",
-              data: {
-                char_start: c.char_start,
-                char_end: c.char_end,
-                prefixLen,
-                suffixLen,
-                head40: c.text.slice(0, 40),
-              },
-              timestamp: Date.now(),
-            }),
-          }
-        ).catch(() => {});
-        // #endregion
-      }
-
       const tx = document.createElement("div");
       tx.className = "chunk-text";
       tx.innerHTML = `<div class="chunk-text-inner">${buildOverlapInnerHtml(
