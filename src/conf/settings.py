@@ -83,6 +83,12 @@ class Settings(BaseSettings):
         validation_alias="CHUNK_OVERLAP_MIN",
         description="句边界对齐时与上一块重叠的最低字符数；未设置时等于 CHUNK_OVERLAP（滑窗目标重叠）",
     )
+    chunk_overlap_max: Optional[int] = Field(
+        default=None,
+        ge=0,
+        validation_alias="CHUNK_OVERLAP_MAX",
+        description="句边界对齐时与上一块重叠的最高字符数；未设置时等于 CHUNK_OVERLAP",
+    )
     retrieval_k: int = Field(
         default=5,
         ge=1,
@@ -110,6 +116,18 @@ class Settings(BaseSettings):
                 "CHUNK_OVERLAP_MIN 不能大于 CHUNK_OVERLAP（当前 min=%s, overlap=%s）"
                 % (self.chunk_overlap_min, self.chunk_overlap)
             )
+        floor = self.chunk_overlap if self.chunk_overlap_min is None else self.chunk_overlap_min
+        ceiling = self.chunk_overlap if self.chunk_overlap_max is None else self.chunk_overlap_max
+        if ceiling < floor:
+            raise ValueError(
+                "CHUNK_OVERLAP_MAX 不能小于有效重叠下界（当前 max=%s, floor=%s）"
+                % (self.chunk_overlap_max, floor)
+            )
+        if ceiling >= self.chunk_size:
+            raise ValueError(
+                "CHUNK_OVERLAP_MAX 必须小于 CHUNK_SIZE（当前 max=%s, size=%s）"
+                % (ceiling, self.chunk_size)
+            )
         return self
 
     @computed_field  # type: ignore[prop-decorator]
@@ -117,6 +135,12 @@ class Settings(BaseSettings):
     def chunk_overlap_floor(self) -> int:
         """句边界对齐时块链重叠下界；未配置 CHUNK_OVERLAP_MIN 时与滑窗目标重叠一致。"""
         return self.chunk_overlap if self.chunk_overlap_min is None else self.chunk_overlap_min
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def chunk_overlap_ceiling(self) -> int:
+        """句边界对齐时块链重叠上界；未配置 CHUNK_OVERLAP_MAX 时与滑窗目标重叠一致。"""
+        return self.chunk_overlap if self.chunk_overlap_max is None else self.chunk_overlap_max
 
     @computed_field  # type: ignore[prop-decorator]
     @property

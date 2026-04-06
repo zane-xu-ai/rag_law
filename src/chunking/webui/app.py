@@ -58,10 +58,13 @@ def _run_preview(
     _validate_overlap(chunk_size, chunk_overlap)
     _check_utf8_size(text)
 
-    # 预览请求的 chunk_overlap 可与 .env 中全局值不同；重叠下界不得超过本次请求的 chunk_overlap
+    # 预览请求的 chunk_overlap 可与 .env 中全局值不同；重叠下/上界不得超过本次请求的 chunk_overlap
     overlap_floor = None
+    overlap_ceiling = None
     if boundary_aware:
-        overlap_floor = min(chunk_overlap, get_settings().chunk_overlap_floor)
+        st = get_settings()
+        overlap_floor = min(chunk_overlap, st.chunk_overlap_floor)
+        overlap_ceiling = min(chunk_overlap, st.chunk_overlap_ceiling)
     chunks: list[TextChunk] = list(
         iter_chunks_for_text(
             text,
@@ -71,6 +74,7 @@ def _run_preview(
             chunk_overlap=chunk_overlap,
             boundary_aware=boundary_aware,
             overlap_floor=overlap_floor,
+            overlap_ceiling=overlap_ceiling,
         )
     )
     n = len(chunks)

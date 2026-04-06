@@ -9,6 +9,7 @@ import pytest
 from chunking.boundary import (
     BOUNDARY_CHARS,
     _clamp_start_for_overlap,
+    _clamp_start_to_overlap_range,
     adjust_end,
     adjust_start,
     iter_text_slices_boundary_aware,
@@ -111,6 +112,21 @@ def test_clamp_start_overlap_uses_upper_bound_not_lower() -> None:
     assert _clamp_start_for_overlap(100, None, 100) == 100
 
 
+def test_clamp_start_to_overlap_range_pins_interval() -> None:
+    """重叠在 [floor, ceiling] 即 start 在 [prev_end-ceiling, prev_end-floor]。"""
+    assert _clamp_start_to_overlap_range(18225, 18286, 40, 160) == 18225
+    assert _clamp_start_to_overlap_range(18100, 18286, 40, 160) == 18126
+    assert _clamp_start_to_overlap_range(18300, 18286, 40, 160) == 18246
+
+
+def test_adjust_start_weak_uses_comma_when_no_strong_in_window() -> None:
+    """±30 内无强句界时可用弱标点（逗号）。"""
+    t = "x" * 20 + "，" + "y" * 50
+    s0 = 22
+    s = adjust_start(t, s0, max_probe=30)
+    assert t[s - 1] == "，"
+
+
 def test_overlap_floor_below_chunk_overlap_allows_smaller_actual_overlap() -> None:
     """
     重叠下界（overlap_floor）可小于 chunk_overlap：clamp 上界为 prev_end - floor，
@@ -159,4 +175,7 @@ def test_boundary_aware_constitution_excerpt_overlap_chunks_sentence_aligned() -
     assert not stripped.startswith("的统一领导下"), (
         "第二块不应以依存短语半截开头；若失败请检查重叠上界 min(s, prev_end-overlap)"
     )
-    assert "中央和地方的国家机构" in second[:200], "第二块应包含「中央和地方的国家机构」完整起句语境"
+    # 弱边界可能改变第二块起点，不要求整句必在第二块前 200 字内；相邻块拼接须仍覆盖该表述
+    assert "中央和地方的国家机构" in (first_text + second), (
+        "相邻块拼接应仍含「中央和地方的国家机构」完整表述"
+    )

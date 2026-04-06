@@ -7,6 +7,11 @@ from collections.abc import Iterator
 # 。！？；与换行；另含 \r 以便不改动字符串长度即可识别 Windows 换行
 BOUNDARY_CHARS: frozenset[str] = frozenset("。！？；\n\r")
 
+# 强句界无候选时：±max_probe 内最近弱边界（标点、空格等），块起点/右开终点在弱字符之后
+WEAK_BOUNDARY_CHARS: frozenset[str] = frozenset(
+    " \t，、,.:;:!?-_（）【】《》「」『』〈〉""''…·％%＆&"
+)
+
 DEFAULT_MAX_PROBE: int = 30
 
 
@@ -14,23 +19,18 @@ def _is_boundary(ch: str) -> bool:
     return ch in BOUNDARY_CHARS
 
 
-def adjust_start(
+def _is_weak_boundary(ch: str) -> bool:
+    return ch in WEAK_BOUNDARY_CHARS
+
+
+def _align_start_strong(
     text: str,
     s0: int,
-    max_probe: int = DEFAULT_MAX_PROBE,
+    max_probe: int,
     *,
-    n: int | None = None,
-) -> int:
-    """
-    在初值 s0 两侧各 max_probe 内找截止符，取位移绝对值较小的一侧；平局优先向后（更贴近句首补全）。
-    两侧均无效则返回 s0。
-    """
-    n = len(text) if n is None else n
-    if s0 <= 0:
-        s0 = 0
-    if s0 > n:
-        return min(s0, n)
-
+    n: int,
+) -> int | None:
+    """在 ±max_probe 内仅强句界；有候选则 min|Δ|，平局向后；无则 None。"""
     lo = max(0, s0 - max_probe)
     k_back: int | None = None
     for i in range(s0 - 1, lo - 1, -1):
@@ -61,21 +61,67 @@ def adjust_start(
         return s_back
     if s_fwd is not None:
         return s_fwd
-    return s0
+    return None
 
 
-def adjust_end(
+def _align_start_weak(
     text: str,
-    e0: int,
+    s0: int,
+    max_probe: int,
+    *,
+    n: int,
+) -> int | None:
+    """强句界无候选时：±max_probe 内最近弱边界（起点在弱字符之后）；平局向后（更小下标）。"""
+    lo = max(0, s0 - max_probe)
+    hi = min(n, s0 + max_probe)
+    best: int | None = None
+    best_d: int | None = None
+    for i in range(lo, hi):
+        if not _is_weak_boundary(text[i]):
+            continue
+        cand = i + 1
+        if cand > n:
+            continue
+        d = abs(cand - s0)
+        if best_d is None or d < best_d or (d == best_d and cand < (best or n + 1)):
+            best = cand
+            best_d = d
+    return best
+
+
+def adjust_start(
+    text: str,
+    s0: int,
     max_probe: int = DEFAULT_MAX_PROBE,
     *,
     n: int | None = None,
 ) -> int:
     """
-    右开终点 e0：在两侧各 max_probe 内对齐到「截止符之后」；e0==len(text) 时保持。
-    平局优先向后候选。
+    强句界 → 弱标点/空格 → 保持初值 s0。
+    在初值 s0 两侧各 max_probe 内：强句界取 |Δ| 最小；无则弱边界取 |Δ| 最小；再无则 s0。
     """
     n = len(text) if n is None else n
+    if s0 <= 0:
+        return 0
+    if s0 > n:
+        return min(s0, n)
+
+    s = _align_start_strong(text, s0, max_probe, n=n)
+    if s is not None:
+        return s
+    s = _align_start_weak(text, s0, max_probe, n=n)
+    if s is not None:
+        return s
+    return s0
+
+
+def _align_end_strong(
+    text: str,
+    e0: int,
+    max_probe: int,
+    *,
+    n: int,
+) -> int | None:
     if e0 >= n:
         return n
     if e0 <= 0:
@@ -111,6 +157,55 @@ def adjust_end(
         return e_back
     if e_fwd is not None:
         return e_fwd
+    return None
+
+
+def _align_end_weak(
+    text: str,
+    e0: int,
+    max_probe: int,
+    *,
+    n: int,
+) -> int | None:
+    if e0 >= n:
+        return n
+    lo = max(0, e0 - max_probe)
+    hi = min(n, e0 + max_probe)
+    best: int | None = None
+    best_d: int | None = None
+    for i in range(lo, hi):
+        if not _is_weak_boundary(text[i]):
+            continue
+        cand = i + 1
+        if cand > n:
+            continue
+        d = abs(cand - e0)
+        if best_d is None or d < best_d or (d == best_d and cand < (best or n + 1)):
+            best = cand
+            best_d = d
+    return best
+
+
+def adjust_end(
+    text: str,
+    e0: int,
+    max_probe: int = DEFAULT_MAX_PROBE,
+    *,
+    n: int | None = None,
+) -> int:
+    """强句界 → 弱标点/空格 → 保持初值 e0。"""
+    n = len(text) if n is None else n
+    if e0 >= n:
+        return n
+    if e0 <= 0:
+        return min(max(e0, 0), n)
+
+    e = _align_end_strong(text, e0, max_probe, n=n)
+    if e is not None:
+        return e
+    e = _align_end_weak(text, e0, max_probe, n=n)
+    if e is not None:
+        return e
     return e0
 
 
@@ -120,15 +215,35 @@ def _clamp_start_for_overlap(
     overlap_floor: int,
 ) -> int:
     """
-    与上一块至少重叠 overlap_floor 个字符：需 prev_end - start >= overlap_floor，
-    即 start <= prev_end - overlap_floor（起点不得晚于该上界）。
+    与上一块至少重叠 overlap_floor 个字符（仅下界，兼容旧调用）。
+    等价于 overlap_ceiling=prev_end（不限制重叠上界，仅保证 start>=0）。
     """
     if prev_end is None:
         return s_adj
-    upper = prev_end - overlap_floor
-    if upper < 0:
+    return _clamp_start_to_overlap_range(s_adj, prev_end, overlap_floor, prev_end)
+
+
+def _clamp_start_to_overlap_range(
+    s_adj: int,
+    prev_end: int | None,
+    overlap_floor: int,
+    overlap_ceiling: int,
+) -> int:
+    """
+    重叠 L = prev_end - start 满足 overlap_floor <= L <= overlap_ceiling，
+    即 prev_end - overlap_ceiling <= start <= prev_end - overlap_floor。
+    """
+    if prev_end is None:
         return s_adj
-    return min(s_adj, upper)
+    if overlap_floor > overlap_ceiling:
+        raise ValueError("overlap_floor 不能大于 overlap_ceiling")
+    hi = prev_end - overlap_floor
+    lo = prev_end - overlap_ceiling
+    if hi < 0:
+        return s_adj
+    if lo < 0:
+        lo = 0
+    return min(max(s_adj, lo), hi)
 
 
 def iter_text_slices_boundary_aware(
@@ -137,22 +252,25 @@ def iter_text_slices_boundary_aware(
     chunk_overlap: int,
     *,
     overlap_floor: int | None = None,
+    overlap_ceiling: int | None = None,
     max_probe: int = DEFAULT_MAX_PROBE,
 ) -> Iterator[tuple[str, int, int]]:
     """
-    先按 `iter_text_slices` 取初值，再对每段做句首/句尾对齐，并保证与上一块
-    重叠不少于 overlap_floor（默认等于 chunk_overlap，即滑窗目标重叠）。
-
-    overlap_floor 可小于 chunk_overlap：句界对齐后允许实际重叠在
-    [overlap_floor, chunk_overlap] 间浮动（例如目标 100、下界 60）。
+    先按 `iter_text_slices` 取初值，再对每段做句首/句尾对齐（强→弱→初值），并保证与上一块
+    重叠在 [overlap_floor, overlap_ceiling]（默认均等于 chunk_overlap）。
     """
     if chunk_overlap >= chunk_size:
         raise ValueError("chunk_overlap 必须小于 chunk_size")
     floor = chunk_overlap if overlap_floor is None else overlap_floor
+    ceiling = chunk_overlap if overlap_ceiling is None else overlap_ceiling
     if floor > chunk_overlap:
         raise ValueError(
             "overlap_floor 不能大于 chunk_overlap（滑窗步长由 chunk_size - chunk_overlap 决定）"
         )
+    if floor > ceiling:
+        raise ValueError("overlap_floor 不能大于 overlap_ceiling")
+    if ceiling >= chunk_size:
+        raise ValueError("overlap_ceiling 必须小于 chunk_size")
     n = len(text)
     if n == 0:
         return
@@ -163,13 +281,13 @@ def iter_text_slices_boundary_aware(
 
     for _piece, s0, e0 in raw:
         s_aligned = adjust_start(text, s0, max_probe, n=n)
-        s_adj = _clamp_start_for_overlap(s_aligned, prev_end, floor)
+        s_adj = _clamp_start_to_overlap_range(s_aligned, prev_end, floor, ceiling)
 
         e_adj = adjust_end(text, e0, max_probe, n=n)
 
         if s_adj >= e_adj:
             s_adj, e_adj = s0, e0
-            s_adj = _clamp_start_for_overlap(s_adj, prev_end, floor)
+            s_adj = _clamp_start_to_overlap_range(s_adj, prev_end, floor, ceiling)
         if s_adj >= e_adj:
             e_adj = min(s_adj + chunk_size, n)
         e_adj = min(e_adj, n)

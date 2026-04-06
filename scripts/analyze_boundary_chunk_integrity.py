@@ -3,19 +3,21 @@
 对单份 Markdown 做边界切分，统计 chunk 首尾是否在「句界字符」上完整，并输出原因分析。
 
 用法（项目根目录）：
-  uv run python scripts/analyze_boundary_chunk_integrity.py data/宪法.md
-  uv run python scripts/analyze_boundary_chunk_integrity.py data/宪法.md --chunk-size 1500 --overlap 50
+  PYTHONPATH=src uv run python scripts/analyze_boundary_chunk_integrity.py data/宪法.md \\
+    --chunk-size 1500 --overlap 50 --overlap-floor 60 \\
+    -o doc/chunk/宪法_边界切分完整性统计.md
 """
 
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 from pathlib import Path
 
 from chunking.boundary import (
     BOUNDARY_CHARS,
     DEFAULT_MAX_PROBE,
-    _clamp_start_for_overlap,
+    _clamp_start_to_overlap_range,
     adjust_end,
     adjust_start,
 )
@@ -28,17 +30,19 @@ def _diag_windows(
     chunk_overlap: int,
     max_probe: int,
     overlap_floor: int | None,
+    overlap_ceiling: int | None,
 ) -> list[dict]:
     """复现 `iter_text_slices_boundary_aware` 的每一步，并记录诊断字段。"""
     n = len(text)
     floor = chunk_overlap if overlap_floor is None else overlap_floor
+    ceiling = chunk_overlap if overlap_ceiling is None else overlap_ceiling
     raw = list(iter_text_slices(text, chunk_size, chunk_overlap))
     prev_end: int | None = None
     rows: list[dict] = []
 
     for _piece, s0, e0 in raw:
         s_aligned = adjust_start(text, s0, max_probe, n=n)
-        s_after_clamp = _clamp_start_for_overlap(s_aligned, prev_end, floor)
+        s_after_clamp = _clamp_start_to_overlap_range(s_aligned, prev_end, floor, ceiling)
         clamp_moved = s_after_clamp != s_aligned
         e_adj = adjust_end(text, e0, max_probe, n=n)
 
@@ -46,7 +50,7 @@ def _diag_windows(
         fallback = s_adj >= e_adj
         if fallback:
             s_adj, e_adj = s0, e0
-            s_adj = _clamp_start_for_overlap(s_adj, prev_end, floor)
+            s_adj = _clamp_start_to_overlap_range(s_adj, prev_end, floor, ceiling)
         if s_adj >= e_adj:
             e_adj = min(s_adj + chunk_size, n)
         e_adj = min(e_adj, n)
@@ -89,7 +93,7 @@ def _reason_head(d: dict, text: str) -> str:
         parts.append("对齐坍缩后回退到原始滑窗，起点未保证在句界后")
     elif d["clamp_moved"]:
         parts.append(
-            "重叠上界将起点左移，块首可能落在上一句中间（为满足与上一块至少重叠 chunk_overlap）"
+            "重叠上界将起点左移，块首可能落在上一句中间（为满足与上一块至少达到 overlap_floor）"
         )
     if not d["fallback"] and s > 0 and prev_ch not in BOUNDARY_CHARS:
         if prev_ch in "，、":
@@ -134,6 +138,12 @@ def main() -> None:
         help="块链重叠下界（默认等于 --overlap，对应 CHUNK_OVERLAP_MIN）",
     )
     p.add_argument(
+        "--overlap-ceiling",
+        type=int,
+        default=None,
+        help="块链重叠上界（默认等于 --overlap，对应 CHUNK_OVERLAP_MAX）",
+    )
+    p.add_argument(
         "-o",
         "--output",
         type=Path,
@@ -145,21 +155,67 @@ def main() -> None:
     text = args.md_path.read_text(encoding="utf-8")
     n = len(text)
     rows = _diag_windows(
-        text, args.chunk_size, args.overlap, args.max_probe, args.overlap_floor
+        text,
+        args.chunk_size,
+        args.overlap,
+        args.max_probe,
+        args.overlap_floor,
+        args.overlap_ceiling,
     )
 
     head_bad = [r for r in rows if not r["head_ok"]]
     tail_bad = [r for r in rows if not r["tail_ok"]]
     both_bad = [r for r in rows if not r["head_ok"] and not r["tail_ok"]]
 
+    overlaps_actual: list[int] = []
+    for r in rows:
+        pe = r["prev_end"]
+        if pe is not None:
+            overlaps_actual.append(pe - r["s"])
+
     lines: list[str] = []
     lines.append(f"# 边界切分首尾完整性：{args.md_path.name}\n")
-    lines.append("## 参数\n")
+    lines.append("## 分析过程\n\n")
+    lines.append(
+        "1. 使用与 `chunking.boundary.iter_text_slices_boundary_aware` 一致的步骤："
+        "先 `iter_text_slices` 得滑窗初值 `(s0,e0)`，再 `adjust_start` / `adjust_end`（强句界→弱标点/空格→初值，`max_probe`），"
+        "并对起点施加 `_clamp_start_to_overlap_range`（重叠区间 `[overlap_floor, overlap_ceiling]`，默认均等于 `chunk_overlap`）。\n"
+    )
+    lines.append(
+        "2. 对每一块检查：`s==0` 或 `text[s-1]` 为句界则**首完整**；"
+        "`e==len(text)` 或 `text[e-1]` 为句界则**尾完整**（句界见下方 `BOUNDARY_CHARS`）。\n"
+    )
+    lines.append(
+        "3. 本报告由 `scripts/analyze_boundary_chunk_integrity.py` 生成；"
+        "相邻块实际重叠长度为 `上一块 char_end - 本块 char_start`（与预览 `overlap_between_adjacent` 一致）。\n"
+    )
+    lines.append(
+        f"\n- **生成时间（UTC）**：`{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%SZ')}`\n"
+    )
+    out_arg = ""
+    if args.output is not None:
+        out_arg = f" -o {args.output.as_posix()}"
+    lines.append(
+        "- **生成命令**：`PYTHONPATH=src uv run python scripts/analyze_boundary_chunk_integrity.py "
+        f"{args.md_path.as_posix()} --chunk-size {args.chunk_size} --overlap {args.overlap}"
+        + (
+            f" --overlap-floor {args.overlap_floor}" if args.overlap_floor is not None else ""
+        )
+        + (
+            f" --overlap-ceiling {args.overlap_ceiling}"
+            if args.overlap_ceiling is not None
+            else ""
+        )
+        + f" --max-probe {args.max_probe}{out_arg}`\n"
+    )
+
+    lines.append("\n## 参数\n")
     lines.append(f"- 文件字符数：`{n}`\n")
     of = args.overlap_floor if args.overlap_floor is not None else args.overlap
+    oc = args.overlap_ceiling if args.overlap_ceiling is not None else args.overlap
     lines.append(
         f"- `chunk_size`={args.chunk_size}, `chunk_overlap`={args.overlap}, "
-        f"`overlap_floor`={of}, `max_probe`={args.max_probe}\n"
+        f"`overlap_floor`={of}, `overlap_ceiling`={oc}, `max_probe`={args.max_probe}\n"
     )
     lines.append(f"- 句界字符集：`{''.join(sorted(BOUNDARY_CHARS))!r}`（不含逗号、顿号）\n")
     lines.append("\n## 判定\n\n")
@@ -175,6 +231,25 @@ def main() -> None:
     lines.append(
         f"| 起点被重叠上界左移（clamp）的块 | {sum(1 for r in rows if r['clamp_moved'])} |\n"
     )
+
+    lines.append("\n## 相邻块实际重叠\n\n")
+    if overlaps_actual:
+        lines.append(
+            f"- 各相邻对重叠长度：`{overlaps_actual}`\n"
+        )
+        lines.append(
+            f"- min={min(overlaps_actual)}，max={max(overlaps_actual)}，"
+            f"avg={round(sum(overlaps_actual) / len(overlaps_actual), 2)}（单位：字符）\n"
+        )
+        of = args.overlap_floor if args.overlap_floor is not None else args.overlap
+        oc = args.overlap_ceiling if args.overlap_ceiling is not None else args.overlap
+        lines.append(
+            f"- 与 `overlap_floor={of}`、`overlap_ceiling={oc}` 的关系：实际重叠应在 **[{of}, {oc}]** 内"
+            "（起点经句界对齐后由 `_clamp_start_to_overlap_range` 夹紧）；"
+            "若窗口内无法同时满足句界与区间，可能回退初值或产生更短块。\n"
+        )
+    else:
+        lines.append("- 仅一块或无相邻对。\n")
 
     lines.append("\n## 不完整 chunk 明细与原因\n\n")
     incomplete = [
