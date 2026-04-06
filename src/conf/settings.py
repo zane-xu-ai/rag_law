@@ -95,6 +95,24 @@ class Settings(BaseSettings):
         validation_alias="RETRIEVAL_K",
         description="kNN / 检索返回条数",
     )
+    chunk_boundary_max_scan: Optional[int] = Field(
+        default=None,
+        ge=1,
+        validation_alias="CHUNK_BOUNDARY_MAX_SCAN",
+        description="句边界扩展扫描半径（字符）；未设置时取 min(CHUNK_SIZE, 800)",
+    )
+    chunk_boundary_priority_overlap: bool = Field(
+        default=False,
+        validation_alias="CHUNK_BOUNDARY_PRIORITY_OVERLAP",
+        description="为 True 时句首对齐优先于重叠区间（允许实际重叠越出 MIN/MAX）",
+    )
+    chunk_boundary_clamp_adjust_max_rounds: int = Field(
+        default=2,
+        ge=1,
+        le=8,
+        validation_alias="CHUNK_BOUNDARY_CLAMP_ADJUST_MAX_ROUNDS",
+        description="重叠夹紧与句首二次对齐的最大往返轮数",
+    )
 
     # --- 向量模型 ---
     bge_m3_path: str = Field(..., validation_alias="BGE_M3_PATH")
@@ -128,6 +146,12 @@ class Settings(BaseSettings):
                 "CHUNK_OVERLAP_MAX 必须小于 CHUNK_SIZE（当前 max=%s, size=%s）"
                 % (ceiling, self.chunk_size)
             )
+        if self.chunk_boundary_max_scan is not None:
+            if self.chunk_boundary_max_scan > self.chunk_size:
+                raise ValueError(
+                    "CHUNK_BOUNDARY_MAX_SCAN 不能大于 CHUNK_SIZE（当前 scan=%s, size=%s）"
+                    % (self.chunk_boundary_max_scan, self.chunk_size)
+                )
         return self
 
     @computed_field  # type: ignore[prop-decorator]
@@ -141,6 +165,15 @@ class Settings(BaseSettings):
     def chunk_overlap_ceiling(self) -> int:
         """句边界对齐时块链重叠上界；未配置 CHUNK_OVERLAP_MAX 时与滑窗目标重叠一致。"""
         return self.chunk_overlap if self.chunk_overlap_max is None else self.chunk_overlap_max
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def chunk_boundary_max_scan_effective(self) -> int:
+        """扩展扫描半径：未配置时 min(CHUNK_SIZE, 800)，且不超过 chunk_size。"""
+        cap = self.chunk_boundary_max_scan
+        if cap is None:
+            return min(self.chunk_size, 800)
+        return min(self.chunk_size, cap)
 
     @computed_field  # type: ignore[prop-decorator]
     @property

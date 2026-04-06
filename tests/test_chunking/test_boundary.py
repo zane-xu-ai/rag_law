@@ -12,6 +12,7 @@ from chunking.boundary import (
     _clamp_start_to_overlap_range,
     adjust_end,
     adjust_start,
+    adjust_start_extended,
     iter_text_slices_boundary_aware,
 )
 from chunking.split import iter_chunks_for_text, iter_text_slices
@@ -117,6 +118,16 @@ def test_clamp_start_to_overlap_range_pins_interval() -> None:
     assert _clamp_start_to_overlap_range(18225, 18286, 40, 160) == 18225
     assert _clamp_start_to_overlap_range(18100, 18286, 40, 160) == 18126
     assert _clamp_start_to_overlap_range(18300, 18286, 40, 160) == 18246
+
+
+def test_adjust_start_extended_finds_strong_boundary_beyond_local_probe() -> None:
+    """±max_probe 内无句号时，扩展扫描仍可对齐到更远处的强句界。"""
+    pre = "x" * 50
+    t = pre + "。" + "y" * 20
+    s0 = 20
+    assert adjust_start(t, s0, max_probe=30) == s0
+    s = adjust_start_extended(t, s0, max_probe=30, max_boundary_scan=800, n=len(t))
+    assert t[s - 1] == "。"
 
 
 def test_adjust_start_weak_uses_comma_when_no_strong_in_window() -> None:

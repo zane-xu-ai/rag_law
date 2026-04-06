@@ -17,11 +17,9 @@ from pathlib import Path
 from chunking.boundary import (
     BOUNDARY_CHARS,
     DEFAULT_MAX_PROBE,
-    _clamp_start_to_overlap_range,
-    adjust_end,
-    adjust_start,
+    _effective_max_boundary_scan,
+    iter_boundary_aware_diag_rows,
 )
-from chunking.split import iter_text_slices
 
 
 def _diag_windows(
@@ -31,55 +29,44 @@ def _diag_windows(
     max_probe: int,
     overlap_floor: int | None,
     overlap_ceiling: int | None,
+    max_boundary_scan: int | None,
+    boundary_priority_overlap: bool,
+    clamp_adjust_max_rounds: int,
 ) -> list[dict]:
     """复现 `iter_text_slices_boundary_aware` 的每一步，并记录诊断字段。"""
     n = len(text)
-    floor = chunk_overlap if overlap_floor is None else overlap_floor
-    ceiling = chunk_overlap if overlap_ceiling is None else overlap_ceiling
-    raw = list(iter_text_slices(text, chunk_size, chunk_overlap))
-    prev_end: int | None = None
     rows: list[dict] = []
+    scan = _effective_max_boundary_scan(chunk_size, max_probe, max_boundary_scan)
 
-    for _piece, s0, e0 in raw:
-        s_aligned = adjust_start(text, s0, max_probe, n=n)
-        s_after_clamp = _clamp_start_to_overlap_range(s_aligned, prev_end, floor, ceiling)
-        clamp_moved = s_after_clamp != s_aligned
-        e_adj = adjust_end(text, e0, max_probe, n=n)
-
-        s_adj = s_after_clamp
-        fallback = s_adj >= e_adj
-        if fallback:
-            s_adj, e_adj = s0, e0
-            s_adj = _clamp_start_to_overlap_range(s_adj, prev_end, floor, ceiling)
-        if s_adj >= e_adj:
-            e_adj = min(s_adj + chunk_size, n)
-        e_adj = min(e_adj, n)
-        if s_adj >= e_adj and s_adj < n:
-            e_adj = s_adj + 1
-        if s_adj >= n:
-            continue
-        if s_adj >= e_adj:
-            continue
-
+    for row in iter_boundary_aware_diag_rows(
+        text,
+        chunk_size,
+        chunk_overlap,
+        overlap_floor=overlap_floor,
+        overlap_ceiling=overlap_ceiling,
+        max_probe=max_probe,
+        max_boundary_scan=scan,
+        boundary_priority_overlap=boundary_priority_overlap,
+        clamp_adjust_max_rounds=clamp_adjust_max_rounds,
+    ):
+        s_adj = row["s"]
+        e_adj = row["e"]
         head_ok = s_adj == 0 or text[s_adj - 1] in BOUNDARY_CHARS
         tail_ok = e_adj == n or text[e_adj - 1] in BOUNDARY_CHARS
-
         rows.append(
             {
-                "s0": s0,
-                "e0": e0,
+                "s0": row["s0"],
+                "e0": row["e0"],
                 "s": s_adj,
                 "e": e_adj,
-                "s_aligned": s_aligned,
-                "clamp_moved": clamp_moved,
-                "fallback": fallback,
+                "s_aligned": row["s_aligned"],
+                "clamp_moved": row["clamp_moved"],
+                "fallback": row["fallback"],
                 "head_ok": head_ok,
                 "tail_ok": tail_ok,
-                "prev_end": prev_end,
+                "prev_end": row["prev_end"],
             }
         )
-        prev_end = e_adj
-
     return rows
 
 
@@ -144,6 +131,23 @@ def main() -> None:
         help="块链重叠上界（默认等于 --overlap，对应 CHUNK_OVERLAP_MAX）",
     )
     p.add_argument(
+        "--max-boundary-scan",
+        type=int,
+        default=None,
+        help="扩展扫描半径（默认 min(chunk_size, 800)）",
+    )
+    p.add_argument(
+        "--boundary-priority-overlap",
+        action="store_true",
+        help="句首对齐优先于重叠区间（允许实际重叠越界）",
+    )
+    p.add_argument(
+        "--clamp-adjust-max-rounds",
+        type=int,
+        default=2,
+        help="夹紧与句首二次对齐最大往返轮数（默认 2）",
+    )
+    p.add_argument(
         "-o",
         "--output",
         type=Path,
@@ -161,6 +165,9 @@ def main() -> None:
         args.max_probe,
         args.overlap_floor,
         args.overlap_ceiling,
+        args.max_boundary_scan,
+        args.boundary_priority_overlap,
+        args.clamp_adjust_max_rounds,
     )
 
     head_bad = [r for r in rows if not r["head_ok"]]
@@ -178,8 +185,8 @@ def main() -> None:
     lines.append("## 分析过程\n\n")
     lines.append(
         "1. 使用与 `chunking.boundary.iter_text_slices_boundary_aware` 一致的步骤："
-        "先 `iter_text_slices` 得滑窗初值 `(s0,e0)`，再 `adjust_start` / `adjust_end`（强句界→弱标点/空格→初值，`max_probe`），"
-        "并对起点施加 `_clamp_start_to_overlap_range`（重叠区间 `[overlap_floor, overlap_ceiling]`，默认均等于 `chunk_overlap`）。\n"
+        "先 `iter_text_slices` 得滑窗初值 `(s0,e0)`，再 `adjust_start_extended` / `adjust_end_extended`（强→弱→初值，扩展扫描），"
+        "重叠夹紧后再对句首做二次扩展对齐与协调；重叠区间 `[overlap_floor, overlap_ceiling]`（默认均等于 `chunk_overlap`）。\n"
     )
     lines.append(
         "2. 对每一块检查：`s==0` 或 `text[s-1]` 为句界则**首完整**；"
@@ -206,16 +213,27 @@ def main() -> None:
             if args.overlap_ceiling is not None
             else ""
         )
-        + f" --max-probe {args.max_probe}{out_arg}`\n"
+        + f" --max-probe {args.max_probe}"
+        + (
+            f" --max-boundary-scan {args.max_boundary_scan}"
+            if args.max_boundary_scan is not None
+            else ""
+        )
+        + (" --boundary-priority-overlap" if args.boundary_priority_overlap else "")
+        + f" --clamp-adjust-max-rounds {args.clamp_adjust_max_rounds}"
+        + f"{out_arg}`\n"
     )
 
     lines.append("\n## 参数\n")
     lines.append(f"- 文件字符数：`{n}`\n")
     of = args.overlap_floor if args.overlap_floor is not None else args.overlap
     oc = args.overlap_ceiling if args.overlap_ceiling is not None else args.overlap
+    mbs = _effective_max_boundary_scan(args.chunk_size, args.max_probe, args.max_boundary_scan)
     lines.append(
         f"- `chunk_size`={args.chunk_size}, `chunk_overlap`={args.overlap}, "
-        f"`overlap_floor`={of}, `overlap_ceiling`={oc}, `max_probe`={args.max_probe}\n"
+        f"`overlap_floor`={of}, `overlap_ceiling`={oc}, `max_probe`={args.max_probe}, "
+        f"`max_boundary_scan`={mbs}, `boundary_priority_overlap`={args.boundary_priority_overlap}, "
+        f"`clamp_adjust_max_rounds`={args.clamp_adjust_max_rounds}\n"
     )
     lines.append(f"- 句界字符集：`{''.join(sorted(BOUNDARY_CHARS))!r}`（不含逗号、顿号）\n")
     lines.append("\n## 判定\n\n")

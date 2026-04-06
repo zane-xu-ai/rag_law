@@ -97,6 +97,19 @@ def test_chunk_overlap_ceiling_when_max_set(monkeypatch: pytest.MonkeyPatch) -> 
     assert get_settings().chunk_overlap_ceiling == 160
 
 
+def test_chunk_boundary_max_scan_effective(monkeypatch: pytest.MonkeyPatch) -> None:
+    _base_env(monkeypatch, CHUNK_SIZE="1500")
+    get_settings.cache_clear()
+    assert get_settings().chunk_boundary_max_scan_effective == min(1500, 800)
+
+
+def test_chunk_boundary_max_scan_cannot_exceed_chunk_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    _base_env(monkeypatch, CHUNK_SIZE="100", CHUNK_BOUNDARY_MAX_SCAN="500")
+    get_settings.cache_clear()
+    with pytest.raises(ValueError, match="CHUNK_BOUNDARY_MAX_SCAN"):
+        get_settings()
+
+
 def test_es_url_without_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     _base_env(monkeypatch, ES_USE_SSL="false")
     s = get_settings()

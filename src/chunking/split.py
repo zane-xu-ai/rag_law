@@ -9,7 +9,11 @@ from typing import Any, Optional
 
 from conf.settings import get_settings, project_root
 
-from chunking.boundary import iter_text_slices_boundary_aware
+from chunking.boundary import (
+    DEFAULT_MAX_PROBE,
+    _effective_max_boundary_scan,
+    iter_text_slices_boundary_aware,
+)
 
 
 @dataclass
@@ -67,6 +71,9 @@ def iter_chunks_for_text(
     boundary_aware: bool = False,
     overlap_floor: Optional[int] = None,
     overlap_ceiling: Optional[int] = None,
+    max_boundary_scan: Optional[int] = None,
+    boundary_priority_overlap: Optional[bool] = None,
+    clamp_adjust_max_rounds: Optional[int] = None,
 ) -> Iterator[TextChunk]:
     """对已有字符串切分并附加元数据（单文件内 chunk_index 从 0 递增）。
 
@@ -77,12 +84,18 @@ def iter_chunks_for_text(
     if boundary_aware:
         floor = overlap_floor if overlap_floor is not None else chunk_overlap
         ceiling = overlap_ceiling if overlap_ceiling is not None else chunk_overlap
+        scan = _effective_max_boundary_scan(chunk_size, DEFAULT_MAX_PROBE, max_boundary_scan)
+        bpo = False if boundary_priority_overlap is None else boundary_priority_overlap
+        car = 2 if clamp_adjust_max_rounds is None else clamp_adjust_max_rounds
         slicer_iter = iter_text_slices_boundary_aware(
             full_text,
             chunk_size,
             chunk_overlap,
             overlap_floor=floor,
             overlap_ceiling=ceiling,
+            max_boundary_scan=scan,
+            boundary_priority_overlap=bpo,
+            clamp_adjust_max_rounds=car,
         )
     else:
         slicer_iter = iter_text_slices(full_text, chunk_size, chunk_overlap)
@@ -111,6 +124,9 @@ def iter_file_chunks(
     boundary_aware: bool = False,
     overlap_floor: Optional[int] = None,
     overlap_ceiling: Optional[int] = None,
+    max_boundary_scan: Optional[int] = None,
+    boundary_priority_overlap: Optional[bool] = None,
+    clamp_adjust_max_rounds: Optional[int] = None,
 ) -> Iterator[TextChunk]:
     """
     读取单个 UTF-8 Markdown 文件并切分。
@@ -133,6 +149,9 @@ def iter_file_chunks(
         boundary_aware=boundary_aware,
         overlap_floor=overlap_floor,
         overlap_ceiling=overlap_ceiling,
+        max_boundary_scan=max_boundary_scan,
+        boundary_priority_overlap=boundary_priority_overlap,
+        clamp_adjust_max_rounds=clamp_adjust_max_rounds,
     )
 
 
@@ -145,6 +164,9 @@ def iter_chunks_for_data_dir(
     boundary_aware: bool = False,
     overlap_floor: Optional[int] = None,
     overlap_ceiling: Optional[int] = None,
+    max_boundary_scan: Optional[int] = None,
+    boundary_priority_overlap: Optional[bool] = None,
+    clamp_adjust_max_rounds: Optional[int] = None,
 ) -> Iterator[TextChunk]:
     """
     遍历目录下所有 `*.md`（排序稳定），依次切分。
@@ -157,6 +179,9 @@ def iter_chunks_for_data_dir(
         s = get_settings()
         chunk_size = chunk_size if chunk_size is not None else s.chunk_size
         chunk_overlap = chunk_overlap if chunk_overlap is not None else s.chunk_overlap
+    eff_mb = max_boundary_scan
+    eff_bpo = boundary_priority_overlap
+    eff_car = clamp_adjust_max_rounds
     if boundary_aware:
         if s is None:
             s = get_settings()
@@ -164,6 +189,12 @@ def iter_chunks_for_data_dir(
             overlap_floor = s.chunk_overlap_floor
         if overlap_ceiling is None:
             overlap_ceiling = s.chunk_overlap_ceiling
+        if eff_mb is None:
+            eff_mb = s.chunk_boundary_max_scan
+        if eff_bpo is None:
+            eff_bpo = s.chunk_boundary_priority_overlap
+        if eff_car is None:
+            eff_car = s.chunk_boundary_clamp_adjust_max_rounds
 
     root = root if root is not None else project_root()
     base = data_dir if data_dir is not None else root / "data"
@@ -179,6 +210,9 @@ def iter_chunks_for_data_dir(
             boundary_aware=boundary_aware,
             overlap_floor=overlap_floor,
             overlap_ceiling=overlap_ceiling,
+            max_boundary_scan=eff_mb,
+            boundary_priority_overlap=eff_bpo,
+            clamp_adjust_max_rounds=eff_car,
         )
 
 
@@ -191,6 +225,9 @@ def load_all_chunks(
     boundary_aware: bool = False,
     overlap_floor: Optional[int] = None,
     overlap_ceiling: Optional[int] = None,
+    max_boundary_scan: Optional[int] = None,
+    boundary_priority_overlap: Optional[bool] = None,
+    clamp_adjust_max_rounds: Optional[int] = None,
 ) -> list[TextChunk]:
     """等价于 `list(iter_chunks_for_data_dir(...))`。"""
     return list(
@@ -202,5 +239,8 @@ def load_all_chunks(
             boundary_aware=boundary_aware,
             overlap_floor=overlap_floor,
             overlap_ceiling=overlap_ceiling,
+            max_boundary_scan=max_boundary_scan,
+            boundary_priority_overlap=boundary_priority_overlap,
+            clamp_adjust_max_rounds=clamp_adjust_max_rounds,
         )
     )
