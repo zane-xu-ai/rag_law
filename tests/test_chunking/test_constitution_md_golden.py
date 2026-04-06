@@ -1,4 +1,6 @@
-"""`data/宪法.md` 在固定参数下的切分黄金回归。
+"""《宪法》正文在固定参数下的切分黄金回归。
+
+语料来源：已提交副本 `tests/test_chunking/fixtures/宪法.md`（与本地 `data/宪法.md` 应对齐；`data/` 被 gitignore，CI 不依赖该目录）。
 
 与 `chunking.webui` 句边界预览（及 `doc/chunk/宪法_边界切分完整性统计.md` 等价命令行）对齐：
 
@@ -10,7 +12,7 @@
 黄金数据见 `tests/test_chunking/fixtures/宪法_1500_100_boundary_golden.json`。
 
 **何时更新 fixture**：有意修改 `chunking.boundary` / `chunking.split` 的切分算法时，同步重跑本用例并更新 JSON
-（commit/PR 中注明）；若仅 `data/宪法.md` 正文变更导致失败，需按新正文重新生成黄金数据。
+（commit/PR 中注明）；若仅 `fixtures/宪法.md` 正文变更导致失败，需按新正文重新生成黄金数据。
 """
 
 from __future__ import annotations
@@ -20,9 +22,9 @@ from pathlib import Path
 
 from chunking.split import iter_chunks_for_text
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_CONSTITUTION_PATH = _REPO_ROOT / "data" / "宪法.md"
-_GOLDEN_PATH = Path(__file__).resolve().parent / "fixtures" / "宪法_1500_100_boundary_golden.json"
+_FIXTURES = Path(__file__).resolve().parent / "fixtures"
+_CONSTITUTION_PATH = _FIXTURES / "宪法.md"
+_GOLDEN_PATH = _FIXTURES / "宪法_1500_100_boundary_golden.json"
 
 
 def _load_golden() -> dict:
@@ -36,7 +38,7 @@ def _slice_constitution() -> list:
         iter_chunks_for_text(
             text,
             source_file="宪法.md",
-            source_path="data/宪法.md",
+            source_path="tests/test_chunking/fixtures/宪法.md",
             chunk_size=1500,
             chunk_overlap=100,
             boundary_aware=True,
