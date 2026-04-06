@@ -21,13 +21,23 @@
       `chunk_size: ${s.chunk_size}  chunk_overlap: ${s.chunk_overlap}`,
       `boundary_aware: ${s.boundary_aware}`,
       `原文段落数(粗分): ${s.source_paragraphs}`,
+    ];
+    if (s.boundary_aware && s.overlap_floor_effective != null) {
+      lines.push(
+        `overlap_floor_effective: ${s.overlap_floor_effective}  overlap_ceiling_effective: ${s.overlap_ceiling_effective}（来自 min(本次 chunk_overlap, .env 中 CHUNK_OVERLAP_MIN/MAX)）`
+      );
+    }
+    lines.push(
       "",
       "每段字符数: " + JSON.stringify(s.chars_per_chunk),
       "每段字符数 min/max/avg: " + JSON.stringify(s.chars_per_chunk_stats),
       "",
       "相邻块实际重叠: " + JSON.stringify(s.overlap_between_adjacent),
-      "相邻重叠 min/max/avg: " + JSON.stringify(s.overlap_adjacent_stats),
-    ];
+      "相邻重叠 min/max/avg: " + JSON.stringify(s.overlap_adjacent_stats)
+    );
+    if (s.boundary_length_note) {
+      lines.push("", "说明:", s.boundary_length_note);
+    }
     $("summary").textContent = lines.join("\n");
   }
 

@@ -107,7 +107,11 @@ def test_preview_boundary_aware_json(client: TestClient) -> None:
         },
     )
     assert r.status_code == 200
-    assert r.json()["summary"]["boundary_aware"] is True
+    summ = r.json()["summary"]
+    assert summ["boundary_aware"] is True
+    assert summ["overlap_floor_effective"] == 0
+    assert summ["overlap_ceiling_effective"] == 0
+    assert "chunk_size 是滑窗初值长度上限" in summ["boundary_length_note"]
 
 
 def test_preview_wrong_content_type(client: TestClient) -> None:

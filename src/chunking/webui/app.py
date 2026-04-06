@@ -99,6 +99,16 @@ def _run_preview(
         "overlap_adjacent_stats": agg(overlaps) if overlaps else None,
         "source_paragraphs": source_paragraph_count(text),
     }
+    if boundary_aware:
+        summary["overlap_floor_effective"] = overlap_floor
+        summary["overlap_ceiling_effective"] = overlap_ceiling
+        summary["boundary_length_note"] = (
+            "句边界对齐：chunk_size 是滑窗初值长度上限，不是「每块必须写满」的下限。"
+            "对齐后实际块长多为 ≤chunk_size：句首/句尾会就近移到句界或弱标点（±max_probe），"
+            "重叠区间还会夹紧起点，二者都常使块变短。"
+            "理论上单块最长约 chunk_size+2*max_probe（首尾同时向外对齐），实践中罕见；"
+            "末块不足 chunk_size 也属正常。"
+        )
 
     if n == 0:
         display = {
