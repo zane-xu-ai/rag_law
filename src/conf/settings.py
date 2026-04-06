@@ -73,7 +73,7 @@ class Settings(BaseSettings):
         description="字符滑窗单块长度（与旧名 PARENT_CHUNK_SIZE 二选一）",
     )
     chunk_overlap: int = Field(
-        default=50,
+        default=100,
         ge=0,
         validation_alias="CHUNK_OVERLAP",
     )

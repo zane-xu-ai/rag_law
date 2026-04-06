@@ -60,9 +60,9 @@ def _run_preview(
 
     # 句边界模式下的重叠夹紧区间 [overlap_floor, overlap_ceiling]（与 split.iter_chunks_for_text / analyze 脚本一致）：
     # - overlap_floor 不得超过本次请求的 chunk_overlap（boundary 校验）；
-    # - overlap_ceiling 可大于 chunk_overlap（例如文档里 overlap=50 且 ceiling=160），但须 < chunk_size。
-    # 旧实现用 min(chunk_overlap, st.chunk_overlap_floor) 且把 ceiling 也按 chunk_overlap 压扁，会把
-    # 全局 CHUNK_OVERLAP=50 误当成「本次滑窗目标」的上界，导致表单填 100 仍显示 50、与统计文档不一致。
+    # - overlap_ceiling 可大于 chunk_overlap（例如 overlap=50 且 ceiling=160），但须 < chunk_size。
+    # 旧实现曾用 min(本次请求, st.chunk_overlap_floor) 且误用全局 CHUNK_OVERLAP 压扁表单目标重叠，已改为
+    # 未配置 MIN/MAX 时以本次请求为准（见 iter_chunks_for_text 与 analyze 脚本）。
     overlap_floor = None
     overlap_ceiling = None
     boundary_priority_overlap: bool | None = None

@@ -2,10 +2,10 @@
 """
 对单份 Markdown 做边界切分，统计 chunk 首尾是否在「句界字符」上完整，并输出原因分析。
 
-用法（项目根目录）：
+用法（项目根目录，与当前默认 CHUNK_SIZE=1500、CHUNK_OVERLAP=100 + 句边界预览等价示例）：
   PYTHONPATH=src uv run python scripts/analyze_boundary_chunk_integrity.py data/宪法.md \\
-    --chunk-size 1500 --overlap 50 --overlap-floor 60 \\
-    -o doc/chunk/宪法_边界切分完整性统计.md
+    --chunk-size 1500 --overlap 100 --overlap-floor 100 --overlap-ceiling 100 \\
+    --boundary-priority-overlap -o doc/chunk/宪法_边界切分完整性统计.md
 """
 
 from __future__ import annotations
@@ -236,6 +236,17 @@ def main() -> None:
         f"`clamp_adjust_max_rounds`={args.clamp_adjust_max_rounds}\n"
     )
     lines.append(f"- 句界字符集：`{''.join(sorted(BOUNDARY_CHARS))!r}`（不含逗号、顿号）\n")
+    if (
+        args.chunk_size == 1500
+        and args.overlap == 100
+        and of == 100
+        and oc == 100
+        and args.boundary_priority_overlap
+    ):
+        lines.append(
+            "- **与项目默认一致**：`conf.settings` 默认 `CHUNK_SIZE=1500`、`CHUNK_OVERLAP=100`；"
+            "句边界预览在重叠上下界相等时启用 `boundary_priority_overlap`，与本命令行 `--boundary-priority-overlap` 对齐。\n"
+        )
     lines.append("\n## 判定\n\n")
     lines.append("- **首完整**：`s==0` 或 `text[s-1]` 属于句界字符（块从句界之后开始）。\n")
     lines.append("- **尾完整**：`e==len(text)` 或 `text[e-1]` 属于句界字符。\n")
@@ -250,6 +261,17 @@ def main() -> None:
         f"| 起点被重叠上界左移（clamp）的块 | {sum(1 for r in rows if r['clamp_moved'])} |\n"
     )
 
+    lens = [r["e"] - r["s"] for r in rows]
+    lines.append("\n## 每段字符数\n\n")
+    lines.append(
+        f"- 各段长度（与预览 `summary.chars_per_chunk` 一致）：`{lens}`\n"
+    )
+    if lens:
+        lines.append(
+            f"- min={min(lens)}，max={max(lens)}，"
+            f"avg={round(sum(lens) / len(lens), 2)}\n"
+        )
+
     lines.append("\n## 相邻块实际重叠\n\n")
     if overlaps_actual:
         lines.append(
@@ -261,11 +283,17 @@ def main() -> None:
         )
         of = args.overlap_floor if args.overlap_floor is not None else args.overlap
         oc = args.overlap_ceiling if args.overlap_ceiling is not None else args.overlap
-        lines.append(
-            f"- 与 `overlap_floor={of}`、`overlap_ceiling={oc}` 的关系：实际重叠应在 **[{of}, {oc}]** 内"
-            "（起点经句界对齐后由 `_clamp_start_to_overlap_range` 夹紧）；"
-            "若窗口内无法同时满足句界与区间，可能回退初值或产生更短块。\n"
-        )
+        if args.boundary_priority_overlap:
+            lines.append(
+                f"- 已启用 `boundary_priority_overlap`：句首对齐可优先于重叠区间，"
+                f"实际相邻重叠**可能**越出 `[{of}, {oc}]`（与预览在刚性重叠时自动开启该选项一致）。\n"
+            )
+        else:
+            lines.append(
+                f"- 与 `overlap_floor={of}`、`overlap_ceiling={oc}` 的关系：实际重叠应在 **[{of}, {oc}]** 内"
+                "（起点经句界对齐后由 `_clamp_start_to_overlap_range` 夹紧）；"
+                "若窗口内无法同时满足句界与区间，可能回退初值或产生更短块。\n"
+            )
     else:
         lines.append("- 仅一块或无相邻对。\n")
 

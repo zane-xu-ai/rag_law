@@ -21,7 +21,7 @@ def _webui_min_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ES_PORT", "9200")
     monkeypatch.setenv("ES_INDEX", "test_index")
     monkeypatch.setenv("CHUNK_SIZE", "800")
-    monkeypatch.setenv("CHUNK_OVERLAP", "50")
+    monkeypatch.setenv("CHUNK_OVERLAP", "100")
     monkeypatch.setenv("RETRIEVAL_K", "5")
 
 
@@ -121,8 +121,13 @@ def test_preview_boundary_aware_json(client: TestClient) -> None:
 
 def test_preview_boundary_overlap_effective_follows_request_not_global_chunk_overlap(
     client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """未配置 CHUNK_OVERLAP_MIN/MAX 时，重叠区间应与表单 chunk_overlap 一致，勿被全局 CHUNK_OVERLAP=50 压扁。"""
+    """未配置 CHUNK_OVERLAP_MIN/MAX 时，重叠区间应与表单 chunk_overlap 一致（不因全局 CHUNK_OVERLAP 更小而压扁）。"""
+    monkeypatch.setenv("CHUNK_OVERLAP", "50")
+    from conf.settings import get_settings
+
+    get_settings.cache_clear()
     r = client.post(
         "/api/preview",
         json={
