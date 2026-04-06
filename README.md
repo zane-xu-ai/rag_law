@@ -21,6 +21,8 @@ pytest
 
 **导出 ES 块到 tmp**：将索引中与 `data/*.md` 同名的文档块读出，写入 `tmp/`（每块一行，块间空一行，相邻块重叠段用「【】」标出）：`uv run python scripts/es_dump_chunks_to_tmp.py`。
 
+**LLM（OpenAI 兼容）**：连通性冒烟依赖可选组 **`llm`**（`openai`）。安装：`uv sync --extra llm`；若需同时保留向量编码依赖，可 `uv sync --extra embedding --extra llm`。配置好 `.env` 中 `MODEL_API_KEY`、`MODEL_BASE_URL`、`MODEL_NAME` 后执行 `uv run python scripts/llm_smoke_test.py`（会发起一次极短补全，产生少量费用）；仅检查配置加载可用 `uv run python scripts/llm_smoke_test.py --dry-run`。
+
 **向量（BGE-M3）**：`src/embeddings` 依赖可选组 **`embedding`**（`FlagEmbedding`、`torch`、`numpy` 等；**`transformers` 锁定为 4.x**，与当前 `FlagEmbedding` 版本兼容）。仅跑切分/配置时可不装；需要本地编码时请执行 `uv sync --extra embedding`（默认已含 `dev`+`web`）或 `pip install -e ".[dev,web,embedding]"`。
 
 **使用 uv 时**：`[dependency-groups]` 含 **`dev`**（pytest 等）与 **`web`**（FastAPI 等，跑 chunking WebUI 测试需要），**[tool.uv] default-groups** 为 `["dev","web"]`，因此 **`uv sync` 与 CI 的 `pip install -e ".[dev,web]"` 等价**，无需再写 `--extra dev` / `--extra web`。请同步并**用虚拟环境里的 pytest**，不要依赖 conda PATH 上的全局 `pytest`：

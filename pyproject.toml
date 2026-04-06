@@ -41,6 +41,10 @@ web = [
     "httpx>=0.27,<1",
     "python-multipart>=0.0.9,<1",
 ]
+# OpenAI 兼容 Chat Completions（DashScope 等）；连通性见 `scripts/llm_smoke_test.py`
+llm = [
+    "openai>=1,<2",
+]
 
 # uv：裸 `uv sync` 默认同步这些组（与 CI 的 pip install -e ".[dev,web]" 一致）。
 # web：chunking WebUI 测试需要 fastapi；与 optional-dependencies.web 保持版本一致。
@@ -59,6 +63,9 @@ web = [
     "uvicorn[standard]>=0.30,<1",
     "httpx>=0.27,<1",
     "python-multipart>=0.0.9,<1",
+]
+llm = [
+    "openai>=1,<2",
 ]
 
 [tool.uv]
