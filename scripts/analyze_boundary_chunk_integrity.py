@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+"""
+对单份 Markdown 做边界切分，统计 chunk 首尾是否在「句界字符」上完整，并输出原因分析。
+
+用法（项目根目录）：
+  uv run python scripts/analyze_boundary_chunk_integrity.py data/宪法.md
+  uv run python scripts/analyze_boundary_chunk_integrity.py data/宪法.md --chunk-size 1500 --overlap 50
+"""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+from chunking.boundary import (
+    BOUNDARY_CHARS,
+    DEFAULT_MAX_PROBE,
+    _clamp_start_for_overlap,
+    adjust_end,
+    adjust_start,
+)
+from chunking.split import iter_text_slices
+
+
+def _diag_windows(
+    text: str,
+    chunk_size: int,
+    chunk_overlap: int,
+    max_probe: int,
+    overlap_floor: int | None,
+) -> list[dict]:
+    """复现 `iter_text_slices_boundary_aware` 的每一步，并记录诊断字段。"""
+    n = len(text)
+    floor = chunk_overlap if overlap_floor is None else overlap_floor
+    raw = list(iter_text_slices(text, chunk_size, chunk_overlap))
+    prev_end: int | None = None
+    rows: list[dict] = []
+
+    for _piece, s0, e0 in raw:
+        s_aligned = adjust_start(text, s0, max_probe, n=n)
+        s_after_clamp = _clamp_start_for_overlap(s_aligned, prev_end, floor)
+        clamp_moved = s_after_clamp != s_aligned
+        e_adj = adjust_end(text, e0, max_probe, n=n)
+
+        s_adj = s_after_clamp
+        fallback = s_adj >= e_adj
+        if fallback:
+            s_adj, e_adj = s0, e0
+            s_adj = _clamp_start_for_overlap(s_adj, prev_end, floor)
+        if s_adj >= e_adj:
+            e_adj = min(s_adj + chunk_size, n)
+        e_adj = min(e_adj, n)
+        if s_adj >= e_adj and s_adj < n:
+            e_adj = s_adj + 1
+        if s_adj >= n:
+            continue
+        if s_adj >= e_adj:
+            continue
+
+        head_ok = s_adj == 0 or text[s_adj - 1] in BOUNDARY_CHARS
+        tail_ok = e_adj == n or text[e_adj - 1] in BOUNDARY_CHARS
+
+        rows.append(
+            {
+                "s0": s0,
+                "e0": e0,
+                "s": s_adj,
+                "e": e_adj,
+                "s_aligned": s_aligned,
+                "clamp_moved": clamp_moved,
+                "fallback": fallback,
+                "head_ok": head_ok,
+                "tail_ok": tail_ok,
+                "prev_end": prev_end,
+            }
+        )
+        prev_end = e_adj
+
+    return rows
+
+
+def _reason_head(d: dict, text: str) -> str:
+    if d["head_ok"]:
+        return "—"
+    s = d["s"]
+    prev_ch = text[s - 1] if s > 0 else ""
+    parts = []
+    if d["fallback"]:
+        parts.append("对齐坍缩后回退到原始滑窗，起点未保证在句界后")
+    elif d["clamp_moved"]:
+        parts.append(
+            "重叠上界将起点左移，块首可能落在上一句中间（为满足与上一块至少重叠 chunk_overlap）"
+        )
+    if not d["fallback"] and s > 0 and prev_ch not in BOUNDARY_CHARS:
+        if prev_ch in "，、":
+            parts.append("前一字符为逗号/顿号：不在 BOUNDARY_CHARS（仅含 。！？；与换行）")
+        elif prev_ch.strip() and prev_ch not in "\t ":
+            parts.append(
+                f"前一字符为 {prev_ch!r}：±{DEFAULT_MAX_PROBE} 内未找到更合适的句界起点，或平局策略保留当前位置"
+            )
+        else:
+            parts.append("前一字符为空白，句界判定可能跨行/格式导致")
+    return "；".join(parts) if parts else "（未归类）"
+
+
+def _reason_tail(d: dict, text: str) -> str:
+    if d["tail_ok"]:
+        return "—"
+    n = len(text)
+    e = d["e"]
+    last = text[e - 1] if e > 0 else ""
+    parts = []
+    if d["fallback"]:
+        parts.append("对齐坍缩后回退到原始滑窗，终点未保证落在句界字符上")
+    if last in "，、":
+        parts.append("块末为逗号/顿号：当前句界集合不含「，」「、」，语义上常为半句，但规则判定为尾不完整")
+    elif last not in BOUNDARY_CHARS and not d["fallback"]:
+        parts.append(
+            f"块末字符为 {last!r}：adjust_end 在 ±{DEFAULT_MAX_PROBE} 内未找到句界，或平局策略未推到句号等"
+        )
+    return "；".join(parts) if parts else "（未归类）"
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description="边界切分 chunk 首尾完整性统计")
+    p.add_argument("md_path", type=Path, help="Markdown 文件路径")
+    p.add_argument("--chunk-size", type=int, default=1500)
+    p.add_argument("--overlap", type=int, default=50)
+    p.add_argument("--max-probe", type=int, default=DEFAULT_MAX_PROBE)
+    p.add_argument(
+        "--overlap-floor",
+        type=int,
+        default=None,
+        help="块链重叠下界（默认等于 --overlap，对应 CHUNK_OVERLAP_MIN）",
+    )
+    p.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=None,
+        help="写入 Markdown 报告路径（默认只打印到 stdout）",
+    )
+    args = p.parse_args()
+
+    text = args.md_path.read_text(encoding="utf-8")
+    n = len(text)
+    rows = _diag_windows(
+        text, args.chunk_size, args.overlap, args.max_probe, args.overlap_floor
+    )
+
+    head_bad = [r for r in rows if not r["head_ok"]]
+    tail_bad = [r for r in rows if not r["tail_ok"]]
+    both_bad = [r for r in rows if not r["head_ok"] and not r["tail_ok"]]
+
+    lines: list[str] = []
+    lines.append(f"# 边界切分首尾完整性：{args.md_path.name}\n")
+    lines.append("## 参数\n")
+    lines.append(f"- 文件字符数：`{n}`\n")
+    of = args.overlap_floor if args.overlap_floor is not None else args.overlap
+    lines.append(
+        f"- `chunk_size`={args.chunk_size}, `chunk_overlap`={args.overlap}, "
+        f"`overlap_floor`={of}, `max_probe`={args.max_probe}\n"
+    )
+    lines.append(f"- 句界字符集：`{''.join(sorted(BOUNDARY_CHARS))!r}`（不含逗号、顿号）\n")
+    lines.append("\n## 判定\n\n")
+    lines.append("- **首完整**：`s==0` 或 `text[s-1]` 属于句界字符（块从句界之后开始）。\n")
+    lines.append("- **尾完整**：`e==len(text)` 或 `text[e-1]` 属于句界字符。\n")
+    lines.append("\n## 汇总\n\n")
+    lines.append("| 指标 | 数量 |\n| --- | ---: |\n")
+    lines.append(f"| chunk 总数 | {len(rows)} |\n")
+    lines.append(f"| 首不完整 | {len(head_bad)} |\n")
+    lines.append(f"| 尾不完整 | {len(tail_bad)} |\n")
+    lines.append(f"| 首尾均不完整 | {len(both_bad)} |\n")
+    lines.append(f"| 发生过对齐回退（fallback）的块 | {sum(1 for r in rows if r['fallback'])} |\n")
+    lines.append(
+        f"| 起点被重叠上界左移（clamp）的块 | {sum(1 for r in rows if r['clamp_moved'])} |\n"
+    )
+
+    lines.append("\n## 不完整 chunk 明细与原因\n\n")
+    incomplete = [
+        (i, r)
+        for i, r in enumerate(rows)
+        if not r["head_ok"] or not r["tail_ok"]
+    ]
+    if not incomplete:
+        lines.append("无：所有 chunk 首尾均满足当前句界规则。\n")
+    else:
+        for idx, r in incomplete:
+            piece = text[r["s"] : r["e"]]
+            head_snip = piece[:80].replace("\n", "\\n")
+            tail_snip = piece[-80:].replace("\n", "\\n")
+            lines.append(f"### chunk 索引 {idx}（全局切片 `[{r['s']}, {r['e']})`）\n\n")
+            lines.append(f"- 首完整：{r['head_ok']}；尾完整：{r['tail_ok']}\n")
+            lines.append(f"- fallback：{r['fallback']}；重叠导致起点左移：{r['clamp_moved']}\n")
+            lines.append(f"- 首不完整原因：{_reason_head(r, text)}\n")
+            lines.append(f"- 尾不完整原因：{_reason_tail(r, text)}\n")
+            lines.append("\n块首预览：\n\n```text\n")
+            lines.append(head_snip + "\n```\n\n")
+            lines.append("块尾预览：\n\n```text\n")
+            lines.append(tail_snip + "\n```\n\n")
+
+    report = "".join(lines)
+    print(report)
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(report, encoding="utf-8")
+        print(f"\n[已写入] {args.output}", file=__import__("sys").stderr)
+
+
+if __name__ == "__main__":
+    main()
