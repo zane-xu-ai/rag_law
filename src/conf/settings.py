@@ -95,6 +95,12 @@ class Settings(BaseSettings):
         validation_alias="RETRIEVAL_K",
         description="kNN / 检索返回条数",
     )
+    qa_max_context_chars: int = Field(
+        default=1200,
+        ge=1,
+        validation_alias="QA_MAX_CONTEXT_CHARS",
+        description="问答时每条检索片段正文的最大字符数（超出截断，避免 prompt 过长）",
+    )
     chunk_boundary_max_scan: Optional[int] = Field(
         default=None,
         ge=1,

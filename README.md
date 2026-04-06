@@ -19,6 +19,8 @@ pytest
 
 **入库（MVP）**：`data/*.md` 切分 → BGE-M3 → 写入 `ES_INDEX`（默认全量重建索引）。需已 `uv sync --extra embedding` 且 ES 可达。示例：`uv run python scripts/rag_ingest.py --dry-run`（仅统计块数）、`uv run python scripts/rag_ingest.py`。说明见 [`doc/plan/v1.0.4-ingest-plan.md`](doc/plan/v1.0.4-ingest-plan.md)（脚本名 **`rag_ingest.py`**，勿用 `ingest.py`，以免与 `src/ingest` 包冲突）。
 
+**问答（MVP）**：单条问题走「查询向量 → ES kNN → system/user 提示 → OpenAI 兼容 `chat.completions`」。依赖：`uv sync --extra embedding --extra llm`，且 ES 已写入与入库一致的索引。示例：`uv run python scripts/rag_qa.py "你的问题"`；仅看拼接后的 messages（JSON）、不调 LLM：`uv run python scripts/rag_qa.py "问题" --dry-run`；检索条数覆盖：`--k 3`。实现见 [`doc/plan/v1.0.5-qa-plan.md`](doc/plan/v1.0.5-qa-plan.md)、[`src/qa/`](src/qa/)。
+
 **导出 ES 块到 tmp**：将索引中与 `data/*.md` 同名的文档块读出，写入 `tmp/`（每块一行，块间空一行，相邻块重叠段用「【】」标出）：`uv run python scripts/es_dump_chunks_to_tmp.py`。
 
 **LLM（OpenAI 兼容）**：连通性冒烟依赖可选组 **`llm`**（`openai`）。安装：`uv sync --extra llm`；若需同时保留向量编码依赖，可 `uv sync --extra embedding --extra llm`。配置好 `.env` 中 `MODEL_API_KEY`、`MODEL_BASE_URL`、`MODEL_NAME` 后执行 `uv run python scripts/llm_smoke_test.py`（会发起一次极短补全，产生少量费用）；仅检查配置加载可用 `uv run python scripts/llm_smoke_test.py --dry-run`。
@@ -30,7 +32,7 @@ pytest
 ```bash
 uv sync
 uv run pytest
-uv run pytest --cov=conf --cov=embeddings --cov=es_store --cov-report=term-missing --cov-report=xml --cov-fail-under=90
+uv run pytest --cov=conf --cov=embeddings --cov=es_store --cov=qa --cov-report=term-missing --cov-report=xml --cov-fail-under=90
 ```
 
 说明：若只执行裸 `uv sync` 且此前未配置 `default-groups`，会只装核心依赖，**不会**装 `dev`，`pytest` 会被卸掉；若仍出现该情况，请拉取本仓库最新 `pyproject.toml` 后再 `uv sync`。
@@ -45,7 +47,7 @@ uv run pytest --cov=conf --cov=embeddings --cov=es_store --cov-report=term-missi
 
 ```bash
 pip install -e ".[dev]"
-pytest --cov=conf --cov=embeddings --cov=es_store --cov-report=term-missing --cov-report=xml --cov-fail-under=90
+pytest --cov=conf --cov=embeddings --cov=es_store --cov=qa --cov-report=term-missing --cov-report=xml --cov-fail-under=90
 ```
 
 - 配置相关测试位于 [`tests/test_conf/test_settings.py`](tests/test_conf/test_settings.py)（对应 `src/conf/settings.py`）。目录故意命名为 `test_conf`，避免使用 `tests/conf/` 与 Python 包 `conf` 同名导致导入被遮蔽。

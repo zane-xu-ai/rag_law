@@ -25,4 +25,4 @@ jobs:
         run: pip install -e ".[dev,web]"
 
       - name: Run tests with coverage
-        run: pytest --cov=conf --cov=embeddings --cov=es_store --cov-report=term-missing --cov-report=xml --cov-fail-under=90
+        run: pytest --cov=conf --cov=embeddings --cov=es_store --cov=qa --cov-report=term-missing --cov-report=xml --cov-fail-under=90
