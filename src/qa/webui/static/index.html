@@ -912,16 +912,45 @@
       return div;
     }
 
+    /** SSE `retrieval` 事件里每条命中为后端摘要：preview、score、source_file、chunk_index（见 qa/streaming.py）。 */
+    function escapeHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
     function createRetrievalItem(index, hit) {
+      const rawScore = hit.score ?? hit._score;
+      const num = typeof rawScore === 'number' ? rawScore : parseFloat(rawScore);
+      const scoreLabel = Number.isFinite(num) ? num.toFixed(3) : '—';
+      const body =
+        hit.preview ??
+        hit.text ??
+        (hit._source && (hit._source.text || hit._source.content)) ??
+        '';
+      const metaBits = [];
+      if (hit.source_file != null && String(hit.source_file).trim() !== '') {
+        metaBits.push('文件: ' + hit.source_file);
+      }
+      if (hit.chunk_index != null) {
+        metaBits.push('块: ' + hit.chunk_index);
+      }
+      if (hit._source && hit._source.metadata != null) {
+        metaBits.push(JSON.stringify(hit._source.metadata));
+      }
+      const metaHtml = metaBits.length
+        ? `<div class="retrieval-meta">${escapeHtml(metaBits.join(' · '))}</div>`
+        : '';
+
       const div = document.createElement('div');
       div.className = 'retrieval-item';
       div.innerHTML = `
         <div class="retrieval-header">
           <span class="retrieval-index">#${index + 1}</span>
-          <span class="retrieval-score">score: ${(hit._score || 0).toFixed(3)}</span>
+          <span class="retrieval-score">score: ${escapeHtml(scoreLabel)}</span>
         </div>
-        <div class="retrieval-content">${hit._source?.text || hit.text || '(无内容)'}</div>
-        ${hit._source?.metadata ? `<div class="retrieval-meta">${JSON.stringify(hit._source.metadata)}</div>` : ''}
+        <div class="retrieval-content">${body ? escapeHtml(body) : '<span class="answer-placeholder">(无内容)</span>'}</div>
+        ${metaHtml}
       `;
       return div;
     }
