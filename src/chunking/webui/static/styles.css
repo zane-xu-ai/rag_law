@@ -151,6 +151,18 @@ label.check input {
   border-radius: 0 6px 6px 0;
 }
 
+.chunk + .chunk {
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px dashed var(--border);
+}
+
+.overlap-chars {
+  background: rgba(120, 180, 100, 0.28);
+  border-radius: 2px;
+  padding: 0 0.05em;
+}
+
 .chunk-meta {
   font-size: 0.8rem;
   color: var(--muted);
@@ -161,6 +173,11 @@ label.check input {
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 0.9rem;
+}
+
+.chunk-text-inner {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .section-tag {
@@ -174,4 +191,10 @@ label.check input {
 
 .omit:empty {
   display: none;
+}
+
+.chunk-hint {
+  font-size: 0.82rem;
+  margin: 0 0 0.65rem;
+  line-height: 1.45;
 }

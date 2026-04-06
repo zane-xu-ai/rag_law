@@ -55,6 +55,11 @@ def test_preview_json_short_full_mode(client: TestClient) -> None:
     assert data["display"]["mode"] == "full"
     assert len(data["display"]["chunks"]) == 3
     assert data["display"]["chunks"][0]["section"] == "all"
+    ov = data["summary"]["overlap_between_adjacent"]
+    ch = data["display"]["chunks"]
+    assert ch[0]["overlap_prev"] == 0 and ch[0]["overlap_next"] == ov[0]
+    assert ch[1]["overlap_prev"] == ov[0] and ch[1]["overlap_next"] == ov[1]
+    assert ch[2]["overlap_prev"] == ov[1] and ch[2]["overlap_next"] == 0
 
 
 def test_preview_overlap_invalid(client: TestClient) -> None:
@@ -112,6 +117,25 @@ def test_preview_boundary_aware_json(client: TestClient) -> None:
     assert summ["overlap_floor_effective"] == 0
     assert summ["overlap_ceiling_effective"] == 0
     assert "chunk_size 是滑窗初值长度上限" in summ["boundary_length_note"]
+
+
+def test_preview_boundary_overlap_effective_follows_request_not_global_chunk_overlap(
+    client: TestClient,
+) -> None:
+    """未配置 CHUNK_OVERLAP_MIN/MAX 时，重叠区间应与表单 chunk_overlap 一致，勿被全局 CHUNK_OVERLAP=50 压扁。"""
+    r = client.post(
+        "/api/preview",
+        json={
+            "text": "x" * 800,
+            "chunk_size": 200,
+            "chunk_overlap": 100,
+            "boundary_aware": True,
+        },
+    )
+    assert r.status_code == 200
+    summ = r.json()["summary"]
+    assert summ["overlap_floor_effective"] == 100
+    assert summ["overlap_ceiling_effective"] == 100
 
 
 def test_preview_wrong_content_type(client: TestClient) -> None:

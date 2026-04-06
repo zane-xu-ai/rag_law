@@ -29,7 +29,7 @@
           </div>
           <div>
             <label for="chunk_overlap">chunk_overlap</label>
-            <input id="chunk_overlap" type="number" min="0" value="50" />
+            <input id="chunk_overlap" type="number" min="0" value="100" />
           </div>
         </div>
 
@@ -47,6 +47,9 @@
         <pre id="summary" class="pre"></pre>
 
         <h2>分段展示</h2>
+        <p class="muted chunk-hint">
+          「与上一块/下一块重叠」表示相邻块在原文中<strong>重合</strong>的字符数（滑窗重叠），不是本块长度；本块长度见每段标题中的「本块 N 字」。
+        </p>
         <p id="omit" class="omit muted"></p>
         <div id="chunks"></div>
       </section>

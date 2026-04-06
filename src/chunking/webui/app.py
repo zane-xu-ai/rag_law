@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -20,6 +22,22 @@ from chunking.webui.preview_logic import (
 )
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_AGENT_DEBUG_LOG = _PROJECT_ROOT / ".cursor" / "debug-4a4a47.log"
+
+
+def _agent_dbg(payload: dict) -> None:
+    # #region agent log
+    try:
+        line = json.dumps(
+            {"sessionId": "4a4a47", **payload, "timestamp": int(time.time() * 1000)},
+            ensure_ascii=False,
+        )
+        with open(_AGENT_DEBUG_LOG, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+    # #endregion
 
 
 class PreviewJSONBody(BaseModel):
@@ -58,13 +76,30 @@ def _run_preview(
     _validate_overlap(chunk_size, chunk_overlap)
     _check_utf8_size(text)
 
-    # 预览请求的 chunk_overlap 可与 .env 中全局值不同；重叠下/上界不得超过本次请求的 chunk_overlap
+    # 句边界模式下的重叠夹紧区间 [overlap_floor, overlap_ceiling]（与 split.iter_chunks_for_text / analyze 脚本一致）：
+    # - overlap_floor 不得超过本次请求的 chunk_overlap（boundary 校验）；
+    # - overlap_ceiling 可大于 chunk_overlap（例如文档里 overlap=50 且 ceiling=160），但须 < chunk_size。
+    # 旧实现用 min(chunk_overlap, st.chunk_overlap_floor) 且把 ceiling 也按 chunk_overlap 压扁，会把
+    # 全局 CHUNK_OVERLAP=50 误当成「本次滑窗目标」的上界，导致表单填 100 仍显示 50、与统计文档不一致。
     overlap_floor = None
     overlap_ceiling = None
+    boundary_priority_overlap: bool | None = None
     if boundary_aware:
         st = get_settings()
-        overlap_floor = min(chunk_overlap, st.chunk_overlap_floor)
-        overlap_ceiling = min(chunk_overlap, st.chunk_overlap_ceiling)
+        req = chunk_overlap
+        cap = chunk_size - 1  # boundary 要求 overlap_ceiling < chunk_size
+        base_floor = (
+            st.chunk_overlap_min if st.chunk_overlap_min is not None else req
+        )
+        overlap_floor = min(req, base_floor)
+        if st.chunk_overlap_max is not None:
+            overlap_ceiling = min(cap, st.chunk_overlap_max)
+        else:
+            overlap_ceiling = min(cap, req)
+        # 当重叠上下界相等时，重叠长度被「钉死」，默认会压过句界；预览优先可读性：句界优先于重叠区间
+        # （与 CHUNK_BOUNDARY_PRIORITY_OVERLAP 为真时一致，或与 rigid 时自动开启叠加）
+        rigid_overlap = overlap_floor == overlap_ceiling
+        boundary_priority_overlap = rigid_overlap or st.chunk_boundary_priority_overlap
     chunks: list[TextChunk] = list(
         iter_chunks_for_text(
             text,
@@ -75,12 +110,73 @@ def _run_preview(
             boundary_aware=boundary_aware,
             overlap_floor=overlap_floor,
             overlap_ceiling=overlap_ceiling,
+            boundary_priority_overlap=boundary_priority_overlap,
         )
     )
     n = len(chunks)
     ranges = [(c.char_start, c.char_end) for c in chunks]
     overlaps = adjacent_overlaps(ranges)
     lengths = [len(c.text) for c in chunks]
+
+    # #region agent log
+    _agent_dbg(
+        {
+            "hypothesisId": "H3",
+            "location": "app.py:_run_preview",
+            "message": "preview_params",
+            "data": {
+                "chunk_size": chunk_size,
+                "chunk_overlap": chunk_overlap,
+                "boundary_aware": boundary_aware,
+                "overlap_floor": overlap_floor,
+                "overlap_ceiling": overlap_ceiling,
+                "boundary_priority_overlap": boundary_priority_overlap,
+                "n_chunks": n,
+            },
+        }
+    )
+    if n >= 2:
+        from chunking.boundary import BOUNDARY_CHARS
+
+        o0 = overlaps[0]
+        c0, c1 = chunks[0], chunks[1]
+        a = text[c1.char_start : c1.char_start + o0]
+        b = text[c0.char_end - o0 : c0.char_end]
+        _agent_dbg(
+            {
+                "hypothesisId": "H2",
+                "location": "app.py:_run_preview",
+                "message": "overlap_substring_eq",
+                "data": {
+                    "c0_end": c0.char_end,
+                    "c1_start": c1.char_start,
+                    "overlap": o0,
+                    "equal": a == b,
+                },
+            }
+        )
+        for i in (0, 1):
+            c = chunks[i]
+            cs = c.char_start
+            left = text[cs - 1] if cs > 0 else ""
+            _agent_dbg(
+                {
+                    "hypothesisId": "H1",
+                    "location": "app.py:_run_preview",
+                    "message": "chunk_boundary_start",
+                    "data": {
+                        "chunk_index": i,
+                        "char_start": cs,
+                        "char_end": c.char_end,
+                        "left_char": left,
+                        "left_is_strong_boundary": (left in BOUNDARY_CHARS)
+                        if cs > 0
+                        else None,
+                        "head_preview": text[cs : cs + 80],
+                    },
+                }
+            )
+    # #endregion
 
     def agg(nums: list[int]) -> dict | None:
         if not nums:
@@ -102,6 +198,7 @@ def _run_preview(
     if boundary_aware:
         summary["overlap_floor_effective"] = overlap_floor
         summary["overlap_ceiling_effective"] = overlap_ceiling
+        summary["boundary_priority_overlap_effective"] = boundary_priority_overlap
         summary["boundary_length_note"] = (
             "句边界对齐：chunk_size 是滑窗初值长度上限，不是「每块必须写满」的下限。"
             "对齐后实际块长多为 ≤chunk_size：句首/句尾会就近移到句界或弱标点（±max_probe），"
@@ -124,6 +221,8 @@ def _run_preview(
     display_chunks: list[dict] = []
     for i in indices:
         c = chunks[i]
+        overlap_prev = overlaps[i - 1] if i > 0 else 0
+        overlap_next = overlaps[i] if i < n - 1 else 0
         display_chunks.append(
             {
                 "index": c.chunk_index,
@@ -131,6 +230,8 @@ def _run_preview(
                 "char_start": c.char_start,
                 "char_end": c.char_end,
                 "section": section_for_display_index(i, n),
+                "overlap_prev": overlap_prev,
+                "overlap_next": overlap_next,
             }
         )
 
