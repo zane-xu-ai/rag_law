@@ -9,6 +9,8 @@ from typing import Any, Iterator, Optional
 
 from loguru import logger
 
+from conf.monitor import build_qa_monitor_document, write_qa_monitor_record
+
 
 def _now() -> float:
     return time.perf_counter()
@@ -102,6 +104,7 @@ def stream_qa_events(
         yield phase_cached("embedder_acquire")
 
     k_eff = settings.retrieval_k if k is None else k
+    hit_count = 0
     qv = embedder.embed_query(query)
     yield phase_end("embed_query")
 
@@ -117,6 +120,7 @@ def stream_qa_events(
         dense_dims=embedder.dense_dimension,
     )
     hits = store.search_knn(qv, k=k_eff)
+    hit_count = len(hits)
     yield phase_end("es_search_knn")
 
     hit_summaries: list[dict[str, Any]] = []
@@ -214,6 +218,26 @@ def stream_qa_events(
         yield {"type": "error", "message": "%s: %s" % (type(e).__name__, e)}
         t_end = _now()
         total_ms = _ms(t_end - t0)
+        llm_total_err = _ms(t_end - t_after_create)
+        ttft_err = _ms(first_token_wall - t0) if first_token_wall else None
+        write_qa_monitor_record(
+            settings,
+            es_client=es_client,
+            record=build_qa_monitor_document(
+                settings=settings,
+                query=query,
+                timings=dict(timings),
+                k_eff=k_eff,
+                hit_count=hit_count,
+                total_ms=total_ms,
+                ttft_ms=ttft_err,
+                rag_prefill_ms=rag_prefill_ms,
+                llm_total_ms=llm_total_err,
+                ok=False,
+                conversation_id=cid,
+                max_tokens=max_tokens,
+            ),
+        )
         logger.bind(
             service="rag-law-qa",
             query_len=len(query),
@@ -226,7 +250,7 @@ def stream_qa_events(
             "type": "done",
             "ok": False,
             "total_ms": total_ms,
-            "ttft_ms": None,
+            "ttft_ms": ttft_err,
             "rag_prefill_ms": rag_prefill_ms,
             "timings": dict(timings),
             "conversation_id": cid,
@@ -259,6 +283,26 @@ def stream_qa_events(
     t_final = _now()
 
     total_ms_ok = _ms(t_final - t0)
+    llm_total_ok = _ms(t_end - t_after_create)
+    ttft_ok = _ms(first_token_wall - t0) if first_token_wall else None
+    write_qa_monitor_record(
+        settings,
+        es_client=es_client,
+        record=build_qa_monitor_document(
+            settings=settings,
+            query=query,
+            timings=dict(timings),
+            k_eff=k_eff,
+            hit_count=hit_count,
+            total_ms=total_ms_ok,
+            ttft_ms=ttft_ok,
+            rag_prefill_ms=rag_prefill_ms,
+            llm_total_ms=llm_total_ok,
+            ok=True,
+            conversation_id=cid,
+            max_tokens=max_tokens,
+        ),
+    )
     logger.bind(
         service="rag-law-qa",
         query_len=len(query),

@@ -2,6 +2,65 @@
 
 法律类 RAG（MVP）：文档切分、向量检索、LLM 问答。详见 [`doc/plan/v1.0.0-rag-law-mvp-plan.md`](doc/plan/v1.0.0-rag-law-mvp-plan.md)。
 
+## 环境配置与启动
+
+### 前置条件
+
+- Python **3.11+**
+- 推荐使用 [**uv**](https://docs.astral.sh/uv/) 管理依赖与虚拟环境（安装：`curl -LsSf https://astral.sh/uv/install.sh | sh`，或见官方文档）。
+
+### 安装依赖（uv）
+
+在项目根目录执行：
+
+```bash
+cp .env.example .env   # 复制后按注释填写，详见下文「环境变量」
+uv sync
+```
+
+`pyproject.toml` 中配置了 `[tool.uv] default-groups = ["dev", "web"]`，因此 **`uv sync` 会默认安装 `dev`（pytest、Elasticsearch 客户端等）与 `web`（FastAPI、uvicorn 等）**，与 CI 中 `pip install -e ".[dev,web]"` 等价，一般**不必**再写 `--group dev` / `--group web`。
+
+按需叠加**可选依赖**（可组合多条 `--extra`）：
+
+| 场景 | 命令 |
+|------|------|
+| 仅核心 + 开发 + Web（默认） | `uv sync` |
+| 本地向量编码（BGE-M3）、入库脚本 | `uv sync --extra embedding` |
+| OpenAI 兼容 LLM、问答脚本 | `uv sync --extra llm` |
+| 完整 RAG（入库 + 问答 CLI/Web） | `uv sync --extra embedding --extra llm` |
+| 仅 ES 客户端（与默认 dev 重叠时可不装） | `uv sync --extra es` |
+| 阿里云 OSS 相关 | `uv sync --extra oss` |
+
+同步后使用项目内解释器，建议统一用 **`uv run …`**，或先 `source .venv/bin/activate` 再运行命令。
+
+### 启动与访问
+
+**Elasticsearch（多数流程需要）**：本地可起示例集群：
+
+```bash
+docker compose -f doc/storage/docker-compose.elasticsearch.yml up -d
+```
+
+默认在 `.env` 中指向 `ES_HOST=localhost`、`ES_PORT=9200`（浏览器一般访问 **http://127.0.0.1:9200** 仅作健康检查；业务数据通过应用与脚本访问）。
+
+**切分预览 Web（可选）**：依赖已包含在默认 `uv sync` 中。
+
+```bash
+uv run python -m chunking.webui
+```
+
+浏览器打开 **http://127.0.0.1:8765/**（无鉴权，仅本机调试）。等价：`uv run uvicorn chunking.webui.app:app --host 127.0.0.1 --port 8765`。
+
+**问答 Web（RAG，可选）**：需已 `uv sync --extra embedding --extra llm`，并完成 `.env` 中与 LLM、ES、BGE 路径等配置。
+
+```bash
+uv run uvicorn qa.webui.app:app --host 127.0.0.1 --port 8766
+```
+
+浏览器打开 **http://127.0.0.1:8766/**。流式接口示例：`POST /api/qa/stream`（详见 [`doc/plan/v1.0.7-qa-webui-plan.md`](doc/plan/v1.0.7-qa-webui-plan.md)）。
+
+**命令行脚本**（不入库/不问答时可不装 embedding/llm）：`uv run python scripts/rag_ingest.py`、`uv run python scripts/rag_qa.py "问题"` 等，见下文「本地开发」。
+
 ## 环境变量
 
 - 复制 [`.env.example`](.env.example) 为项目根目录下的 `.env`，按注释填写。
@@ -10,6 +69,8 @@
 - **日志（v1.1.0）**：`LOG_LEVEL`、`LOG_FORMAT`（`text` / `json`）、可选 `LOG_FILE`（相对路径相对项目根）。统一初始化与 uvicorn 拦截说明见 [`doc/plan/v1.1.0-logging-plan.md`](doc/plan/v1.1.0-logging-plan.md)。
 
 ## 本地开发
+
+环境与 Web 启动见上文「环境配置与启动」。若不用 uv，也可用 pip 安装开发依赖后跑测试：
 
 ```bash
 pip install -e ".[dev]"

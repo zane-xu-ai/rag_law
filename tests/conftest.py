@@ -16,8 +16,9 @@ from conf.settings import get_settings
 
 
 @pytest.fixture(autouse=True)
-def _clear_settings_cache() -> None:
-    """避免 `get_settings` 的 lru_cache 在用例间串味。"""
+def _clear_settings_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """避免 `get_settings` 的 lru_cache 在用例间串味；默认关闭 QA 监控 JSONL 落盘。"""
+    monkeypatch.setenv("MONITOR_LOG_FILE", "")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

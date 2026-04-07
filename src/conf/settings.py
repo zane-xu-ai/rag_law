@@ -138,6 +138,23 @@ class Settings(BaseSettings):
     log_format: Literal["text", "json"] = Field(default="text", validation_alias="LOG_FORMAT")
     log_file: Optional[str] = Field(default=None, validation_alias="LOG_FILE")
 
+    # --- QA 监控 JSONL / ES；详见 doc/plan/v1.1.1-monitoring-plan.md §1.1 ---
+    monitor_log_file: Optional[str] = Field(
+        default="logs/monitor.log",
+        validation_alias="MONITOR_LOG_FILE",
+        description="JSONL 路径；空字符串关闭落盘",
+    )
+    monitor_es_index: str = Field(
+        default="rag-law-monitor",
+        validation_alias="MONITOR_ES_INDEX",
+        description="监控文档写入的 ES 索引名（与 ES_INDEX 文档块索引分离）",
+    )
+    monitor_es_enabled: bool = Field(
+        default=False,
+        validation_alias="MONITOR_ES_ENABLED",
+        description="为 True 时将监控记录写入 monitor_es_index",
+    )
+
     @field_validator("log_level", mode="before")
     @classmethod
     def _normalize_log_level(cls, v: object) -> str:
@@ -200,6 +217,20 @@ class Settings(BaseSettings):
         if self.log_file is None:
             return None
         raw = str(self.log_file).strip()
+        if not raw:
+            return None
+        p = Path(raw).expanduser()
+        if p.is_absolute():
+            return p.resolve()
+        return (_PROJECT_ROOT / p).resolve()
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def monitor_log_file_resolved(self) -> Optional[Path]:
+        """`MONITOR_LOG_FILE` 解析为绝对路径；未设置或空字符串时为 None。"""
+        if self.monitor_log_file is None:
+            return None
+        raw = str(self.monitor_log_file).strip()
         if not raw:
             return None
         p = Path(raw).expanduser()
