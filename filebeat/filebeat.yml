@@ -4,26 +4,31 @@ filebeat.inputs:
     enabled: true
     paths:
       - ${PROJECT_ROOT}/logs/monitor.log
+    # 保险起见：即使后续 paths 改成通配符，也不要采集 filebeat 自己的日志文件
+    prospector.scanner.exclude_files: ['filebeat-.*\.ndjson$']
     parsers:
       - ndjson:
-          target: ""
+          # 放到 monitor.* 下，避免与 ECS 顶层字段（event/service）冲突
+          target: "monitor"
           add_error_key: true
-          overwrite_keys: true
+          overwrite_keys: false
 
 processors:
   - add_fields:
       target: ""
       fields:
         source_component: rag-law-filebeat
+  - drop_fields:
+      fields: ["agent", "host", "input", "log", "ecs"]
+      ignore_missing: true
 
 setup.ilm.enabled: false
-setup.template.enabled: true
-setup.template.name: rag-law-monitor
-setup.template.pattern: rag-law-monitor
+setup.template.enabled: false
 
 output.elasticsearch:
   hosts: ["${ES_HOST:localhost}:${ES_PORT:9200}"]
   protocol: ${ES_PROTOCOL:http}
   username: ${ES_USER:}
   password: ${ES_PASSWORD:}
-  index: rag-law-monitor
+  # 使用新索引，避免沿用历史大 mapping
+  index: rag-law-monitor-v2
