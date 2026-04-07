@@ -5,6 +5,10 @@
 
 from __future__ import annotations
 
+import importlib.util
+import sys
+import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -12,11 +16,20 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from loguru import logger
 from pydantic import BaseModel, Field
 
 from qa.streaming import format_sse_event, stream_qa_events
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+def _openai_available() -> bool:
+    """`openai` 是否可导入；测试注入的桩模块可能无 `__spec__`，`find_spec` 会抛 `ValueError`。"""
+    try:
+        return importlib.util.find_spec("openai") is not None
+    except (ModuleNotFoundError, ValueError):
+        return "openai" in sys.modules
 
 
 class QAStreamBody(BaseModel):
@@ -30,6 +43,7 @@ class QAStreamBody(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from conf.logging_setup import configure_logging
     from conf.settings import get_settings
 
     from embeddings import build_embedder
@@ -37,12 +51,12 @@ async def lifespan(app: FastAPI):
 
     get_settings.cache_clear()
     settings = get_settings()
+    configure_logging(settings)
     app.state.settings = settings
     app.state.embedder = build_embedder(settings)
     app.state.es_client = elasticsearch_client(settings)
-    import importlib.util
 
-    if importlib.util.find_spec("openai") is not None:
+    if _openai_available():
         from openai import OpenAI
 
         app.state.openai_client = OpenAI(
@@ -61,6 +75,24 @@ app = FastAPI(
 )
 
 
+@app.middleware("http")
+async def log_http_requests(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    t0 = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
+    logger.info(
+        "http {} {} -> {} {:.2f}ms request_id={}",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed_ms,
+        request_id,
+    )
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -68,9 +100,7 @@ def health() -> dict[str, str]:
 
 @app.post("/api/qa/stream")
 def api_qa_stream(request: Request, body: QAStreamBody) -> StreamingResponse:
-    import importlib.util
-
-    if importlib.util.find_spec("openai") is None:
+    if not _openai_available():
         raise HTTPException(
             status_code=503,
             detail="未安装 openai，请执行: uv sync --extra llm",

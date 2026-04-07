@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from typing import Any, Iterator, Optional
+
+from loguru import logger
 
 
 def _now() -> float:
@@ -13,6 +16,10 @@ def _now() -> float:
 
 def _ms(dt: float) -> float:
     return round(dt * 1000.0, 3)
+
+
+def _query_fp(q: str) -> str:
+    return hashlib.sha256(q.encode("utf-8")).hexdigest()[:16]
 
 
 def stream_qa_events(
@@ -206,10 +213,19 @@ def stream_qa_events(
     except Exception as e:
         yield {"type": "error", "message": "%s: %s" % (type(e).__name__, e)}
         t_end = _now()
+        total_ms = _ms(t_end - t0)
+        logger.bind(
+            service="rag-law-qa",
+            query_len=len(query),
+            query_fp=_query_fp(query),
+            retrieval_k=k_eff,
+            total_ms=total_ms,
+            ok=False,
+        ).warning("qa_stream_done")
         yield {
             "type": "done",
             "ok": False,
-            "total_ms": _ms(t_end - t0),
+            "total_ms": total_ms,
             "ttft_ms": None,
             "rag_prefill_ms": rag_prefill_ms,
             "timings": dict(timings),
@@ -242,10 +258,19 @@ def stream_qa_events(
     yield phase_end("response_finalize")
     t_final = _now()
 
+    total_ms_ok = _ms(t_final - t0)
+    logger.bind(
+        service="rag-law-qa",
+        query_len=len(query),
+        query_fp=_query_fp(query),
+        retrieval_k=k_eff,
+        total_ms=total_ms_ok,
+        ok=True,
+    ).info("qa_stream_done")
     yield {
         "type": "done",
         "ok": True,
-        "total_ms": _ms(t_final - t0),
+        "total_ms": total_ms_ok,
         "ttft_ms": _ms(first_token_wall - t0) if first_token_wall else None,
         "rag_prefill_ms": rag_prefill_ms,
         "timings": dict(timings),

@@ -7,6 +7,7 @@
 - 复制 [`.env.example`](.env.example) 为项目根目录下的 `.env`，按注释填写。
 - **勿将 `.env` 提交到仓库**；协作时只提交 `.env.example`（占位符，不含真实密钥）。
 - 配置项说明与命名约定见 `src/conf/settings.py`（`conf` 包）。
+- **日志（v1.1.0）**：`LOG_LEVEL`、`LOG_FORMAT`（`text` / `json`）、可选 `LOG_FILE`（相对路径相对项目根）。统一初始化与 uvicorn 拦截说明见 [`doc/plan/v1.1.0-logging-plan.md`](doc/plan/v1.1.0-logging-plan.md)。
 
 ## 本地开发
 

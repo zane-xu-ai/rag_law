@@ -56,12 +56,14 @@ def main() -> int:
     if os.environ.get("PYTEST_CURRENT_TEST"):
         os.environ.pop("PYTEST_CURRENT_TEST", None)
 
+    from conf.logging_setup import configure_logging
     from conf.settings import get_settings
     from es_store.client import elasticsearch_client
     from es_store.store import EsChunkStore
 
     get_settings.cache_clear()
     settings = get_settings()
+    configure_logging(settings)
     client = elasticsearch_client(settings)
 
     print("1) ping")

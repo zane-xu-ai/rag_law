@@ -5,10 +5,10 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import quote
 
-from pydantic import AliasChoices, Field, computed_field, model_validator
+from pydantic import AliasChoices, Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_settings.sources import PydanticBaseSettingsSource
 
@@ -133,6 +133,34 @@ class Settings(BaseSettings):
         validation_alias="EMBEDDING_BATCH_SIZE",
     )
 
+    # --- 日志（loguru）；详见 doc/plan/v1.1.0-logging-plan.md ---
+    log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
+    log_format: Literal["text", "json"] = Field(default="text", validation_alias="LOG_FORMAT")
+    log_file: Optional[str] = Field(default=None, validation_alias="LOG_FILE")
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def _normalize_log_level(cls, v: object) -> str:
+        if v is None or (isinstance(v, str) and not str(v).strip()):
+            return "INFO"
+        s = str(v).strip().upper()
+        allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        if s not in allowed:
+            raise ValueError(
+                "LOG_LEVEL 必须是 %s 之一（当前 %r）" % (", ".join(sorted(allowed)), v)
+            )
+        return s
+
+    @field_validator("log_format", mode="before")
+    @classmethod
+    def _normalize_log_format(cls, v: object) -> str:
+        if v is None or (isinstance(v, str) and not str(v).strip()):
+            return "text"
+        s = str(v).strip().lower()
+        if s not in ("text", "json"):
+            raise ValueError("LOG_FORMAT 必须是 text 或 json（当前 %r）" % (v,))
+        return s
+
     @model_validator(mode="after")
     def _validate_overlap_vs_size(self) -> Settings:
         if self.chunk_overlap >= self.chunk_size:
@@ -164,6 +192,20 @@ class Settings(BaseSettings):
                     % (self.chunk_boundary_max_scan, self.chunk_size)
                 )
         return self
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def log_file_resolved(self) -> Optional[Path]:
+        """`LOG_FILE` 解析为绝对路径；未设置或空字符串时为 None。"""
+        if self.log_file is None:
+            return None
+        raw = str(self.log_file).strip()
+        if not raw:
+            return None
+        p = Path(raw).expanduser()
+        if p.is_absolute():
+            return p.resolve()
+        return (_PROJECT_ROOT / p).resolve()
 
     @computed_field  # type: ignore[prop-decorator]
     @property

@@ -46,6 +46,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    from conf.logging_setup import configure_logging
     from conf.settings import get_settings
     from embeddings import build_embedder
     from es_store.client import elasticsearch_client
@@ -54,6 +55,7 @@ def main() -> int:
 
     get_settings.cache_clear()
     settings = get_settings()
+    configure_logging(settings)
 
     k_eff = settings.retrieval_k if args.k is None else args.k
     embedder = build_embedder(settings)

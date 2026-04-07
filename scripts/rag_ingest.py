@@ -74,12 +74,14 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    from conf.logging_setup import configure_logging
     from conf.settings import get_settings
     from ingest import load_chunks_with_sha256
     from ingest.documents import chunk_embedding_to_source
 
     get_settings.cache_clear()
     settings = get_settings()
+    configure_logging(settings)
 
     print("1) 切分 + 每文件 SHA256 …")
     if args.files:

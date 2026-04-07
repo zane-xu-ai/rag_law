@@ -39,10 +39,12 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    from conf.logging_setup import configure_logging
     from conf.settings import get_settings
 
     get_settings.cache_clear()
     settings = get_settings()
+    configure_logging(settings)
 
     print("MODEL_BASE_URL:", settings.model_base_url)
     print("MODEL_NAME:", settings.model_name)

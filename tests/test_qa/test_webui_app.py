@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sys
+import types
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -45,7 +48,12 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     _qa_webui_env(monkeypatch)
     monkeypatch.setattr("embeddings.build_embedder", lambda s: _FakeEmbedder())
     monkeypatch.setattr("es_store.client.elasticsearch_client", lambda s: object())
-    monkeypatch.setattr("openai.OpenAI", _FakeOpenAI)
+    if "openai" in sys.modules:
+        monkeypatch.setattr("openai.OpenAI", _FakeOpenAI)
+    else:
+        stub = types.ModuleType("openai")
+        stub.OpenAI = _FakeOpenAI
+        monkeypatch.setitem(sys.modules, "openai", stub)
     from conf.settings import get_settings
 
     get_settings.cache_clear()
