@@ -1,0 +1,36 @@
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      - '${LOG_MTBACKEND_FILE:/mt_server/mt-front_backend.log}'
+    json.keys_under_root: true
+    json.add_error_key: true
+    json.message_key: message
+
+output.elasticsearch:
+  hosts:
+    - "http://xx.lan:11448"
+    - "http://yy.lan:11448"
+    - "http://zz.lan:11448"
+  enabled: true
+  index: "${BUSINESS_NAME:mt}-${PROJECT_NAME:lang}-${APP_ENV:pre}-%{+yyyy.MM.dd}"
+  allow_older_versions: true
+
+processors:
+  - decode_json_fields:
+      fields: ["message"]
+  - drop_fields:
+      fields: ["agent", "log", "input", "enter_time", "ecs"]
+
+setup.ilm.enabled: false
+setup.template.enabled: true
+setup.template.name: "${BUSINESS_NAME:mt}-${PROJECT_NAME:lang}-${APP_ENV:pre}"
+setup.template.pattern: "${BUSINESS_NAME:mt}-${PROJECT_NAME:lang}-${APP_ENV:pre}-*"
+
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 7
+  permissions: 0644
