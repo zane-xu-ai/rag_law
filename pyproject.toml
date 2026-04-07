@@ -45,6 +45,9 @@ web = [
 llm = [
     "openai>=1,<2",
 ]
+oss = [
+    "alibabacloud-oss-v2>=1.2.0",
+]
 
 # uv：裸 `uv sync` 默认同步这些组（与 CI 的 pip install -e ".[dev,web]" 一致）。
 # web：chunking WebUI 测试需要 fastapi；与 optional-dependencies.web 保持版本一致。
@@ -66,6 +69,9 @@ web = [
 ]
 llm = [
     "openai>=1,<2",
+]
+oss = [
+    "alibabacloud-oss-v2>=1.2.0",
 ]
 
 [tool.uv]
