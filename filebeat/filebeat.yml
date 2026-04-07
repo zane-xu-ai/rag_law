@@ -1,0 +1,29 @@
+filebeat.inputs:
+  - type: filestream
+    id: rag-law-monitor-log
+    enabled: true
+    paths:
+      - ${PROJECT_ROOT}/logs/monitor.log
+    parsers:
+      - ndjson:
+          target: ""
+          add_error_key: true
+          overwrite_keys: true
+
+processors:
+  - add_fields:
+      target: ""
+      fields:
+        source_component: rag-law-filebeat
+
+setup.ilm.enabled: false
+setup.template.enabled: true
+setup.template.name: rag-law-monitor
+setup.template.pattern: rag-law-monitor
+
+output.elasticsearch:
+  hosts: ["${ES_HOST:localhost}:${ES_PORT:9200}"]
+  protocol: ${ES_PROTOCOL:http}
+  username: ${ES_USER:}
+  password: ${ES_PASSWORD:}
+  index: rag-law-monitor
