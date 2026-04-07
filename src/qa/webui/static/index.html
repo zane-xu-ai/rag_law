@@ -1013,6 +1013,9 @@
               continue;
             }
             if (ev.type === "phase") {
+              // 不展示耗时 < 10ms 的阶段（如 settings_resolve、build_messages、缓存 0ms）
+              const phaseMs = Number(ev.elapsed_ms);
+              if (Number.isFinite(phaseMs) && phaseMs < 10) continue;
               const phaseDiv = createPhaseItem(
                 ev.phase,
                 ev.elapsed_ms,
