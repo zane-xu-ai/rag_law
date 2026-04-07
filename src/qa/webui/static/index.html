@@ -296,6 +296,14 @@
     }
 
     /* Button */
+    .btn-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      margin-left: auto;
+    }
+
     .btn-primary {
       padding: 0.75rem 1.5rem;
       border: none;
@@ -310,7 +318,41 @@
       align-items: center;
       gap: 0.5rem;
       box-shadow: var(--shadow);
-      margin-left: auto;
+    }
+
+    .btn-stop {
+      padding: 0.75rem 1.25rem;
+      border: 2px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-input);
+      color: var(--text-secondary);
+      font-weight: 600;
+      font-size: 0.9375rem;
+      cursor: pointer;
+      transition: all var(--transition);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn-stop:hover:not(:disabled) {
+      border-color: var(--error);
+      color: var(--error);
+      background: rgba(239, 68, 68, 0.08);
+    }
+
+    .btn-stop:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .answer-stopped {
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px dashed var(--border);
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      font-style: italic;
     }
 
     .btn-primary:hover:not(:disabled) {
@@ -610,10 +652,16 @@
         width: 5rem;
       }
 
-      .btn-primary {
+      .btn-group {
+        width: 100%;
+        margin-left: 0;
+        flex-direction: column;
+      }
+
+      .btn-primary,
+      .btn-stop {
         width: 100%;
         justify-content: center;
-        margin-left: 0;
       }
 
       .metrics-grid {
@@ -667,7 +715,8 @@
 
       .header,
       .theme-toggle,
-      .btn-primary {
+      .btn-primary,
+      .btn-stop {
         display: none;
       }
 
@@ -780,12 +829,20 @@
           <label for="k">检索数量 k</label>
           <input type="number" id="k" min="1" max="20" placeholder="默认" />
         </div>
-        <button type="button" id="go" class="btn-primary">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polygon points="5 3 19 12 5 21 5 3"></polygon>
-          </svg>
-          提交提问
-        </button>
+        <div class="btn-group">
+          <button type="button" id="go" class="btn-primary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            提交提问
+          </button>
+          <button type="button" id="stop" class="btn-stop" hidden disabled aria-label="终止大模型输出">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12" rx="1"></rect>
+            </svg>
+            停止输出
+          </button>
+        </div>
       </div>
     </div>
 
@@ -900,6 +957,22 @@
     const metricsCard = $("metricsCard");
     const hitCountEl = $("hitCount");
 
+    let streamAbortController = null;
+
+    function setStopStreamingUi(active) {
+      const stopBtn = $("stop");
+      stopBtn.hidden = !active;
+      stopBtn.disabled = !active;
+    }
+
+    function isAbortError(e) {
+      return (
+        e &&
+        (e.name === "AbortError" ||
+          (e.cause && e.cause.name === "AbortError"))
+      );
+    }
+
     function createPhaseItem(name, time, offset, isCached = false) {
       const div = document.createElement('div');
       div.className = 'phase-item';
@@ -970,6 +1043,9 @@
       goBtn.classList.add('spinning');
       goBtn.innerHTML = `<span>处理中...</span>`;
 
+      streamAbortController = new AbortController();
+      setStopStreamingUi(true);
+
       // Reset UI
       phasesEl.innerHTML = '';
       retrievalEl.innerHTML = '';
@@ -987,6 +1063,7 @@
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
           body: JSON.stringify(body),
+          signal: streamAbortController.signal,
         });
         if (!res.ok) {
           const t = await res.text();
@@ -1053,10 +1130,27 @@
           }
         }
       } catch (e) {
-        errEl.textContent = String(e.message || e);
-        errEl.classList.add('show');
-        answerEl.classList.remove('streaming');
+        if (isAbortError(e)) {
+          answerEl.classList.remove('streaming');
+          const plain = answerEl.textContent.trim();
+          const hasStoppedMark = answerEl.querySelector(".answer-stopped");
+          if (!plain || answerEl.querySelector(".answer-placeholder")) {
+            answerEl.innerHTML =
+              '<div class="answer-placeholder">已停止，尚无生成内容。</div>';
+          } else if (!hasStoppedMark) {
+            const mark = document.createElement("div");
+            mark.className = "answer-stopped";
+            mark.textContent = "输出已停止（连接已中断）";
+            answerEl.appendChild(mark);
+          }
+        } else {
+          errEl.textContent = String(e.message || e);
+          errEl.classList.add('show');
+          answerEl.classList.remove('streaming');
+        }
       } finally {
+        streamAbortController = null;
+        setStopStreamingUi(false);
         goBtn.disabled = false;
         goBtn.classList.remove('spinning');
         goBtn.innerHTML = `
@@ -1069,6 +1163,12 @@
     }
 
     $("go").addEventListener("click", run);
+
+    $("stop").addEventListener("click", () => {
+      if (streamAbortController) {
+        streamAbortController.abort();
+      }
+    });
 
     // Enter to submit (Ctrl+Enter or Cmd+Enter)
     $("q").addEventListener('keydown', (e) => {
