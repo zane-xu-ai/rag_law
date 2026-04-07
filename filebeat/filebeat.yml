@@ -32,3 +32,11 @@ output.elasticsearch:
   password: ${ES_PASSWORD:}
   # 使用新索引，避免沿用历史大 mapping
   index: rag-law-monitor-v2
+
+logging.level: warning
+logging.to_files: true
+logging.files:
+  path: ${PROJECT_ROOT}/logs
+  name: filebeat
+  keepfiles: 7
+  permissions: 0644
