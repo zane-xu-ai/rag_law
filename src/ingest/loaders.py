@@ -12,8 +12,7 @@ from conf.settings import get_settings, project_root
 from ingest.documents import sha256_utf8_file
 
 
-def iter_chunks_for_data_dir_with_sha256(
-    data_dir: Optional[Path] = None,
+def _resolve_chunking_params(
     *,
     chunk_size: Optional[int] = None,
     chunk_overlap: Optional[int] = None,
@@ -24,8 +23,18 @@ def iter_chunks_for_data_dir_with_sha256(
     max_boundary_scan: Optional[int] = None,
     boundary_priority_overlap: Optional[bool] = None,
     clamp_adjust_max_rounds: Optional[int] = None,
-) -> Iterator[tuple[TextChunk, str]]:
-    """与 `iter_chunks_for_data_dir` 相同遍历顺序；每个 chunk 附带该文件 `sha256.hexdigest()`。"""
+) -> tuple[
+    int,
+    int,
+    Path,
+    bool,
+    Optional[int],
+    Optional[int],
+    Optional[int],
+    Optional[bool],
+    Optional[int],
+]:
+    """与 `iter_chunks_for_data_dir_with_sha256` 相同的配置解析。"""
     s = None
     if chunk_size is None or chunk_overlap is None:
         s = get_settings()
@@ -49,11 +58,33 @@ def iter_chunks_for_data_dir_with_sha256(
             eff_car = s.chunk_boundary_clamp_adjust_max_rounds
 
     root = root if root is not None else project_root()
-    base = data_dir if data_dir is not None else root / "data"
-    if not base.is_dir():
-        raise FileNotFoundError("数据目录不存在: %s" % base)
+    return (
+        chunk_size,
+        chunk_overlap,
+        root,
+        boundary_aware,
+        overlap_floor,
+        overlap_ceiling,
+        eff_mb,
+        eff_bpo,
+        eff_car,
+    )
 
-    for md in sorted(base.glob("*.md")):
+
+def _iter_chunks_for_md_files_with_sha256(
+    md_files: list[Path],
+    *,
+    chunk_size: int,
+    chunk_overlap: int,
+    root: Path,
+    boundary_aware: bool,
+    overlap_floor: Optional[int],
+    overlap_ceiling: Optional[int],
+    eff_mb: Optional[int],
+    eff_bpo: Optional[bool],
+    eff_car: Optional[int],
+) -> Iterator[tuple[TextChunk, str]]:
+    for md in md_files:
         file_sha = sha256_utf8_file(md)
         for chunk in iter_file_chunks(
             md,
@@ -70,7 +101,7 @@ def iter_chunks_for_data_dir_with_sha256(
             yield chunk, file_sha
 
 
-def load_chunks_with_sha256(
+def iter_chunks_for_data_dir_with_sha256(
     data_dir: Optional[Path] = None,
     *,
     chunk_size: Optional[int] = None,
@@ -82,22 +113,156 @@ def load_chunks_with_sha256(
     max_boundary_scan: Optional[int] = None,
     boundary_priority_overlap: Optional[bool] = None,
     clamp_adjust_max_rounds: Optional[int] = None,
-) -> tuple[list[TextChunk], list[str]]:
-    """返回 `(chunks, file_sha_per_chunk)`，两列表等长。"""
-    pairs = list(
-        iter_chunks_for_data_dir_with_sha256(
-            data_dir,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            root=root,
-            boundary_aware=boundary_aware,
-            overlap_floor=overlap_floor,
-            overlap_ceiling=overlap_ceiling,
-            max_boundary_scan=max_boundary_scan,
-            boundary_priority_overlap=boundary_priority_overlap,
-            clamp_adjust_max_rounds=clamp_adjust_max_rounds,
-        )
+) -> Iterator[tuple[TextChunk, str]]:
+    """与 `iter_chunks_for_data_dir` 相同遍历顺序；每个 chunk 附带该文件 `sha256.hexdigest()`。"""
+    (
+        chunk_size,
+        chunk_overlap,
+        root,
+        boundary_aware,
+        overlap_floor,
+        overlap_ceiling,
+        eff_mb,
+        eff_bpo,
+        eff_car,
+    ) = _resolve_chunking_params(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        root=root,
+        boundary_aware=boundary_aware,
+        overlap_floor=overlap_floor,
+        overlap_ceiling=overlap_ceiling,
+        max_boundary_scan=max_boundary_scan,
+        boundary_priority_overlap=boundary_priority_overlap,
+        clamp_adjust_max_rounds=clamp_adjust_max_rounds,
     )
+    base = data_dir if data_dir is not None else root / "data"
+    if not base.is_dir():
+        raise FileNotFoundError("数据目录不存在: %s" % base)
+
+    md_files = sorted(base.glob("*.md"))
+    yield from _iter_chunks_for_md_files_with_sha256(
+        md_files,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        root=root,
+        boundary_aware=boundary_aware,
+        overlap_floor=overlap_floor,
+        overlap_ceiling=overlap_ceiling,
+        eff_mb=eff_mb,
+        eff_bpo=eff_bpo,
+        eff_car=eff_car,
+    )
+
+
+def iter_chunks_for_paths_with_sha256(
+    paths: list[Path],
+    *,
+    chunk_size: Optional[int] = None,
+    chunk_overlap: Optional[int] = None,
+    root: Optional[Path] = None,
+    boundary_aware: bool = False,
+    overlap_floor: Optional[int] = None,
+    overlap_ceiling: Optional[int] = None,
+    max_boundary_scan: Optional[int] = None,
+    boundary_priority_overlap: Optional[bool] = None,
+    clamp_adjust_max_rounds: Optional[int] = None,
+) -> Iterator[tuple[TextChunk, str]]:
+    """按给定 Markdown 文件路径列表切分（排序后）；与目录遍历语义一致。"""
+    if not paths:
+        return
+    md_files: list[Path] = []
+    for p in paths:
+        rp = p.expanduser().resolve()
+        if not rp.is_file():
+            raise FileNotFoundError("不是文件或不存在: %s" % p)
+        if rp.suffix.lower() != ".md":
+            raise ValueError("仅支持 .md 文件: %s" % p)
+        md_files.append(rp)
+    md_files = sorted(md_files)
+    (
+        chunk_size,
+        chunk_overlap,
+        root,
+        boundary_aware,
+        overlap_floor,
+        overlap_ceiling,
+        eff_mb,
+        eff_bpo,
+        eff_car,
+    ) = _resolve_chunking_params(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        root=root,
+        boundary_aware=boundary_aware,
+        overlap_floor=overlap_floor,
+        overlap_ceiling=overlap_ceiling,
+        max_boundary_scan=max_boundary_scan,
+        boundary_priority_overlap=boundary_priority_overlap,
+        clamp_adjust_max_rounds=clamp_adjust_max_rounds,
+    )
+    yield from _iter_chunks_for_md_files_with_sha256(
+        md_files,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        root=root,
+        boundary_aware=boundary_aware,
+        overlap_floor=overlap_floor,
+        overlap_ceiling=overlap_ceiling,
+        eff_mb=eff_mb,
+        eff_bpo=eff_bpo,
+        eff_car=eff_car,
+    )
+
+
+def load_chunks_with_sha256(
+    data_dir: Optional[Path] = None,
+    *,
+    md_paths: Optional[list[Path]] = None,
+    chunk_size: Optional[int] = None,
+    chunk_overlap: Optional[int] = None,
+    root: Optional[Path] = None,
+    boundary_aware: bool = False,
+    overlap_floor: Optional[int] = None,
+    overlap_ceiling: Optional[int] = None,
+    max_boundary_scan: Optional[int] = None,
+    boundary_priority_overlap: Optional[bool] = None,
+    clamp_adjust_max_rounds: Optional[int] = None,
+) -> tuple[list[TextChunk], list[str]]:
+    """返回 `(chunks, file_sha_per_chunk)`，两列表等长。
+
+    若传入 ``md_paths``，则只处理这些文件（忽略 ``data_dir``）；否则扫描 ``data_dir`` 下 ``*.md``。
+    """
+    if md_paths is not None:
+        pairs = list(
+            iter_chunks_for_paths_with_sha256(
+                md_paths,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                root=root,
+                boundary_aware=boundary_aware,
+                overlap_floor=overlap_floor,
+                overlap_ceiling=overlap_ceiling,
+                max_boundary_scan=max_boundary_scan,
+                boundary_priority_overlap=boundary_priority_overlap,
+                clamp_adjust_max_rounds=clamp_adjust_max_rounds,
+            )
+        )
+    else:
+        pairs = list(
+            iter_chunks_for_data_dir_with_sha256(
+                data_dir,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                root=root,
+                boundary_aware=boundary_aware,
+                overlap_floor=overlap_floor,
+                overlap_ceiling=overlap_ceiling,
+                max_boundary_scan=max_boundary_scan,
+                boundary_priority_overlap=boundary_priority_overlap,
+                clamp_adjust_max_rounds=clamp_adjust_max_rounds,
+            )
+        )
     if not pairs:
         return [], []
     ch, sh = zip(*pairs)

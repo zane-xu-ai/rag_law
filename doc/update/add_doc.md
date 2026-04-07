@@ -20,6 +20,18 @@ uv run python scripts/rag_ingest.py --data-dir data/md3 --dry-run
 uv run python scripts/rag_ingest.py --data-dir data/md3
 ```
 
+### 指定单个或多个文件（例如仅 `data/md4/民法典.md`）
+
+与 `--data-dir` **二选一**，使用 `--files`，路径相对**项目根**或绝对路径：
+
+```bash
+uv run python scripts/rag_ingest.py --files data/md4/民法典.md --dry-run
+# 增量写入已有索引（不删库）
+uv run python scripts/rag_ingest.py --files data/md4/民法典.md --no-recreate
+```
+
+若目录 `data/md4/` 下**只有**该文件，也可用 `--data-dir data/md4`，效果等价于只处理这一份 `*.md`。
+
 可选参数：
 
 - `--no-recreate`：不删除已有索引，仅在当前映射下 **bulk 写入/覆盖**（见下文）。

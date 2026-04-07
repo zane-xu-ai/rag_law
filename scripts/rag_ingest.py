@@ -8,6 +8,8 @@
     uv run python scripts/rag_ingest.py
     uv run python scripts/rag_ingest.py --dry-run
     uv run python scripts/rag_ingest.py --no-recreate
+    uv run python scripts/rag_ingest.py --data-dir data/md4
+    uv run python scripts/rag_ingest.py --files data/md4/民法典.md --no-recreate
 
 需：`uv sync --extra embedding`、本机 ES；compose 见 `doc/storage/docker-compose.elasticsearch.yml`。
 """
@@ -24,13 +26,29 @@ sys.path.insert(0, str(_ROOT / "src"))
 os.chdir(_ROOT)
 
 
+def _resolve_project_path(p: Path) -> Path:
+    """相对路径按项目根解析（在项目根执行脚本时与 data/xxx 一致）。"""
+    p = p.expanduser()
+    if p.is_absolute():
+        return p.resolve()
+    return (_ROOT / p).resolve()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="RAG MVP：data 目录 Markdown 入库 ES")
-    parser.add_argument(
+    src = parser.add_mutually_exclusive_group()
+    src.add_argument(
         "--data-dir",
         type=Path,
         default=None,
-        help="Markdown 目录（默认 <项目根>/data）",
+        help="Markdown 目录（默认 <项目根>/data）；与 --files 二选一",
+    )
+    src.add_argument(
+        "--files",
+        type=Path,
+        nargs="+",
+        metavar="PATH",
+        help="指定若干 .md 文件入库（路径相对项目根或绝对）；与 --data-dir 二选一",
     )
     parser.add_argument(
         "--recreate",
@@ -64,14 +82,30 @@ def main() -> int:
     settings = get_settings()
 
     print("1) 切分 + 每文件 SHA256 …")
-    chunks, shas = load_chunks_with_sha256(
-        args.data_dir,
-        boundary_aware=args.boundary_aware,
-    )
+    if args.files:
+        md_paths = [_resolve_project_path(p) for p in args.files]
+        try:
+            shown = "\n       ".join(str(p.relative_to(_ROOT)) for p in md_paths)
+        except ValueError:
+            shown = "\n       ".join(str(p) for p in md_paths)
+        print("   源文件:\n       " + shown)
+        chunks, shas = load_chunks_with_sha256(
+            None,
+            md_paths=md_paths,
+            boundary_aware=args.boundary_aware,
+        )
+    else:
+        chunks, shas = load_chunks_with_sha256(
+            args.data_dir if args.data_dir is not None else _ROOT / "data",
+            boundary_aware=args.boundary_aware,
+        )
     n = len(chunks)
     print("   块数:", n)
     if n == 0:
-        print("ERROR: 无 chunk，请检查 --data-dir 下是否有 *.md", file=sys.stderr)
+        print(
+            "ERROR: 无 chunk，请检查 --data-dir 下是否有 *.md，或 --files 路径是否正确",
+            file=sys.stderr,
+        )
         return 1
 
     if args.dry_run:
@@ -124,9 +158,11 @@ def main() -> int:
     cnt = client.count(index=settings.es_index)
     total = int(cnt["count"])
     print("5) count:", total)
-    if total != n:
-        print("ERROR: count 与块数不一致", file=sys.stderr)
+    if args.recreate and total != n:
+        print("ERROR: count 与本次块数不一致（全量重建时期望相等）", file=sys.stderr)
         return 1
+    if not args.recreate:
+        print("   (增量模式) 索引总条数可能大于本次块数，属正常。")
 
     if args.smoke_query.strip():
         print("6) kNN 抽检:", repr(args.smoke_query.strip()))
