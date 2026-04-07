@@ -50,7 +50,7 @@ uv sync --extra oss --extra embedding
 ```bash
 python -m utils.oss_aliyun.cli get \
   --bucket rag-law \
-  --key docs/民法典.md \
+  --key md3/民法典.md \ 
   --out data/inbox/民法典.md
 ```
 
@@ -59,7 +59,7 @@ python -m utils.oss_aliyun.cli get \
 ```bash
 python -m utils.oss_aliyun.cli head \
   --bucket rag-law \
-  --key docs/民法典.md
+  --key md3/民法典.md
 ```
 
 备注：若你需要批量下载，建议后续补一个 `list` 子命令（当前未实现）。
