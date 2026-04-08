@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
+
+from loguru import logger
 
 from conf.settings import get_settings, project_root
 
@@ -58,6 +61,99 @@ def iter_text_slices(
         start += step
 
 
+def _char_ngrams(text: str, n: int = 2) -> Counter[str]:
+    s = (text or "").strip()
+    if not s:
+        return Counter()
+    if len(s) < n:
+        return Counter({s: 1})
+    return Counter(s[i : i + n] for i in range(0, len(s) - n + 1))
+
+
+def _cosine_sim_counter(a: Counter[str], b: Counter[str]) -> float:
+    if not a or not b:
+        return 0.0
+    dot = 0.0
+    for k, av in a.items():
+        bv = b.get(k)
+        if bv:
+            dot += float(av * bv)
+    if dot <= 0.0:
+        return 0.0
+    na = sum(float(v * v) for v in a.values()) ** 0.5
+    nb = sum(float(v * v) for v in b.values()) ** 0.5
+    if na <= 0.0 or nb <= 0.0:
+        return 0.0
+    return dot / (na * nb)
+
+
+def semantic_merge_chunks(
+    chunks: list[TextChunk],
+    *,
+    similarity_threshold: float,
+    min_chunk_chars: int,
+    max_chunk_chars: int,
+) -> tuple[list[TextChunk], dict[str, float]]:
+    """相邻块语义动态合并（轻量版：字符 2-gram 余弦相似度）。"""
+    if not chunks:
+        return [], {
+            "before_count": 0.0,
+            "after_count": 0.0,
+            "merge_ratio": 0.0,
+            "merge_hits": 0.0,
+            "merge_checks": 0.0,
+            "threshold_hit_rate": 0.0,
+        }
+    merged: list[TextChunk] = []
+    merge_hits = 0
+    merge_checks = 0
+
+    current = chunks[0]
+    current_vec = _char_ngrams(current.text)
+
+    for nxt in chunks[1:]:
+        cand_len = len(current.text) + len(nxt.text)
+        allow_by_len = len(current.text) < min_chunk_chars and cand_len <= max_chunk_chars
+        merge_checks += 1
+        sim = _cosine_sim_counter(current_vec, _char_ngrams(nxt.text))
+        if allow_by_len and sim >= similarity_threshold:
+            joiner = "" if current.text.endswith(("\n", "。", "！", "？", ";", "；")) else "\n"
+            current = TextChunk(
+                text=f"{current.text}{joiner}{nxt.text}",
+                source_file=current.source_file,
+                chunk_index=current.chunk_index,
+                char_start=current.char_start,
+                char_end=nxt.char_end,
+                source_path=current.source_path,
+                source_id=current.source_id,
+                mime_type=current.mime_type,
+                doc_type=current.doc_type,
+                domain=current.domain,
+                extra=current.extra,
+            )
+            current_vec = _char_ngrams(current.text)
+            merge_hits += 1
+            continue
+        merged.append(current)
+        current = nxt
+        current_vec = _char_ngrams(current.text)
+    merged.append(current)
+
+    for i, c in enumerate(merged):
+        c.chunk_index = i
+
+    hit_rate = (merge_hits / merge_checks) if merge_checks > 0 else 0.0
+    stats = {
+        "before_count": float(len(chunks)),
+        "after_count": float(len(merged)),
+        "merge_ratio": float(len(merged)) / float(len(chunks)),
+        "merge_hits": float(merge_hits),
+        "merge_checks": float(merge_checks),
+        "threshold_hit_rate": hit_rate,
+    }
+    return merged, stats
+
+
 def iter_chunks_for_text(
     full_text: str,
     *,
@@ -74,6 +170,10 @@ def iter_chunks_for_text(
     max_boundary_scan: Optional[int] = None,
     boundary_priority_overlap: Optional[bool] = None,
     clamp_adjust_max_rounds: Optional[int] = None,
+    semantic_merge_enabled: bool = False,
+    semantic_merge_threshold: float = 0.82,
+    semantic_merge_min_chars: int = 220,
+    semantic_merge_max_chars: int = 2200,
 ) -> Iterator[TextChunk]:
     """对已有字符串切分并附加元数据（单文件内 chunk_index 从 0 递增）。
 
@@ -99,20 +199,41 @@ def iter_chunks_for_text(
         )
     else:
         slicer_iter = iter_text_slices(full_text, chunk_size, chunk_overlap)
+    chunks: list[TextChunk] = []
     for idx, (piece, c0, c1) in enumerate(slicer_iter):
-        yield TextChunk(
-            text=piece,
-            source_file=source_file,
-            chunk_index=idx,
-            char_start=c0,
-            char_end=c1,
-            source_path=source_path,
-            source_id=sid,
-            mime_type=mime_type,
-            doc_type=doc_type,
-            domain=domain,
-            extra=None,
+        chunks.append(
+            TextChunk(
+                text=piece,
+                source_file=source_file,
+                chunk_index=idx,
+                char_start=c0,
+                char_end=c1,
+                source_path=source_path,
+                source_id=sid,
+                mime_type=mime_type,
+                doc_type=doc_type,
+                domain=domain,
+                extra=None,
+            )
         )
+    if semantic_merge_enabled and chunks:
+        before = len(chunks)
+        chunks, stats = semantic_merge_chunks(
+            chunks,
+            similarity_threshold=semantic_merge_threshold,
+            min_chunk_chars=semantic_merge_min_chars,
+            max_chunk_chars=semantic_merge_max_chars,
+        )
+        logger.bind(
+            event="chunk_semantic_merge",
+            source_file=source_file,
+            before_count=before,
+            after_count=len(chunks),
+            merge_ratio=stats["merge_ratio"],
+            threshold_hit_rate=stats["threshold_hit_rate"],
+        ).info("chunk_semantic_merge_done")
+    for c in chunks:
+        yield c
 
 
 def iter_file_chunks(
@@ -127,6 +248,10 @@ def iter_file_chunks(
     max_boundary_scan: Optional[int] = None,
     boundary_priority_overlap: Optional[bool] = None,
     clamp_adjust_max_rounds: Optional[int] = None,
+    semantic_merge_enabled: bool = False,
+    semantic_merge_threshold: float = 0.82,
+    semantic_merge_min_chars: int = 220,
+    semantic_merge_max_chars: int = 2200,
 ) -> Iterator[TextChunk]:
     """
     读取单个 UTF-8 Markdown 文件并切分。
@@ -152,6 +277,10 @@ def iter_file_chunks(
         max_boundary_scan=max_boundary_scan,
         boundary_priority_overlap=boundary_priority_overlap,
         clamp_adjust_max_rounds=clamp_adjust_max_rounds,
+        semantic_merge_enabled=semantic_merge_enabled,
+        semantic_merge_threshold=semantic_merge_threshold,
+        semantic_merge_min_chars=semantic_merge_min_chars,
+        semantic_merge_max_chars=semantic_merge_max_chars,
     )
 
 
@@ -167,6 +296,10 @@ def iter_chunks_for_data_dir(
     max_boundary_scan: Optional[int] = None,
     boundary_priority_overlap: Optional[bool] = None,
     clamp_adjust_max_rounds: Optional[int] = None,
+    semantic_merge_enabled: bool = False,
+    semantic_merge_threshold: float = 0.82,
+    semantic_merge_min_chars: int = 220,
+    semantic_merge_max_chars: int = 2200,
 ) -> Iterator[TextChunk]:
     """
     遍历目录下所有 `*.md`（排序稳定），依次切分。
@@ -182,6 +315,10 @@ def iter_chunks_for_data_dir(
     eff_mb = max_boundary_scan
     eff_bpo = boundary_priority_overlap
     eff_car = clamp_adjust_max_rounds
+    eff_sem_enabled = semantic_merge_enabled
+    eff_sem_th = semantic_merge_threshold
+    eff_sem_min = semantic_merge_min_chars
+    eff_sem_max = semantic_merge_max_chars
     if boundary_aware:
         if s is None:
             s = get_settings()
@@ -213,6 +350,10 @@ def iter_chunks_for_data_dir(
             max_boundary_scan=eff_mb,
             boundary_priority_overlap=eff_bpo,
             clamp_adjust_max_rounds=eff_car,
+            semantic_merge_enabled=eff_sem_enabled,
+            semantic_merge_threshold=eff_sem_th,
+            semantic_merge_min_chars=eff_sem_min,
+            semantic_merge_max_chars=eff_sem_max,
         )
 
 
@@ -228,6 +369,10 @@ def load_all_chunks(
     max_boundary_scan: Optional[int] = None,
     boundary_priority_overlap: Optional[bool] = None,
     clamp_adjust_max_rounds: Optional[int] = None,
+    semantic_merge_enabled: bool = False,
+    semantic_merge_threshold: float = 0.82,
+    semantic_merge_min_chars: int = 220,
+    semantic_merge_max_chars: int = 2200,
 ) -> list[TextChunk]:
     """等价于 `list(iter_chunks_for_data_dir(...))`。"""
     return list(
@@ -242,5 +387,9 @@ def load_all_chunks(
             max_boundary_scan=max_boundary_scan,
             boundary_priority_overlap=boundary_priority_overlap,
             clamp_adjust_max_rounds=clamp_adjust_max_rounds,
+            semantic_merge_enabled=semantic_merge_enabled,
+            semantic_merge_threshold=semantic_merge_threshold,
+            semantic_merge_min_chars=semantic_merge_min_chars,
+            semantic_merge_max_chars=semantic_merge_max_chars,
         )
     )

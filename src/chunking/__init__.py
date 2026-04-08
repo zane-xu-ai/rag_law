@@ -21,6 +21,7 @@ from chunking.split import (
     iter_file_chunks,
     iter_text_slices,
     load_all_chunks,
+    semantic_merge_chunks,
 )
 
 __all__ = [
@@ -42,4 +43,5 @@ __all__ = [
     "iter_file_chunks",
     "iter_chunks_for_data_dir",
     "load_all_chunks",
+    "semantic_merge_chunks",
 ]

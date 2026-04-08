@@ -13,6 +13,7 @@ from chunking.split import (
     iter_file_chunks,
     iter_text_slices,
     load_all_chunks,
+    semantic_merge_chunks,
 )
 
 
@@ -103,3 +104,56 @@ def test_iter_file_chunks_via_path(tmp_path: Path) -> None:
     chunks = list(iter_file_chunks(p, chunk_size=3, chunk_overlap=1, root=tmp_path))
     assert len(chunks) >= 1
     assert chunks[0].text == "hel"
+
+
+def test_semantic_merge_chunks_merge_high_similarity() -> None:
+    chunks = [
+        TextChunk("合同纠纷的诉讼时效为三年。", "a.md", 0, 0, 14),
+        TextChunk("合同纠纷的诉讼时效通常是三年。", "a.md", 1, 14, 30),
+    ]
+    merged, stats = semantic_merge_chunks(
+        chunks,
+        similarity_threshold=0.5,
+        min_chunk_chars=80,
+        max_chunk_chars=200,
+    )
+    assert len(merged) == 1
+    assert merged[0].chunk_index == 0
+    assert merged[0].char_start == 0
+    assert merged[0].char_end == 30
+    assert stats["merge_hits"] >= 1
+
+
+def test_semantic_merge_chunks_keep_low_similarity() -> None:
+    chunks = [
+        TextChunk("合同纠纷的诉讼时效为三年。", "a.md", 0, 0, 14),
+        TextChunk("刑法关于盗窃罪的量刑标准。", "a.md", 1, 14, 28),
+    ]
+    merged, stats = semantic_merge_chunks(
+        chunks,
+        similarity_threshold=0.95,
+        min_chunk_chars=80,
+        max_chunk_chars=200,
+    )
+    assert len(merged) == 2
+    assert merged[0].chunk_index == 0
+    assert merged[1].chunk_index == 1
+    assert stats["merge_hits"] == 0
+
+
+def test_iter_chunks_for_text_semantic_merge_enabled() -> None:
+    text = "合同纠纷的诉讼时效为三年。合同纠纷的诉讼时效通常是三年。"
+    chunks = list(
+        iter_chunks_for_text(
+            text,
+            source_file="a.md",
+            source_path="data/a.md",
+            chunk_size=16,
+            chunk_overlap=0,
+            semantic_merge_enabled=True,
+            semantic_merge_threshold=0.0,
+            semantic_merge_min_chars=80,
+            semantic_merge_max_chars=200,
+        )
+    )
+    assert len(chunks) == 1

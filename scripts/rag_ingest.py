@@ -95,11 +95,19 @@ def main() -> int:
             None,
             md_paths=md_paths,
             boundary_aware=args.boundary_aware,
+            semantic_merge_enabled=settings.chunk_semantic_merge_enabled,
+            semantic_merge_threshold=settings.chunk_semantic_merge_threshold,
+            semantic_merge_min_chars=settings.chunk_semantic_merge_min_chars,
+            semantic_merge_max_chars=settings.chunk_semantic_merge_max_chars,
         )
     else:
         chunks, shas = load_chunks_with_sha256(
             args.data_dir if args.data_dir is not None else _ROOT / "data",
             boundary_aware=args.boundary_aware,
+            semantic_merge_enabled=settings.chunk_semantic_merge_enabled,
+            semantic_merge_threshold=settings.chunk_semantic_merge_threshold,
+            semantic_merge_min_chars=settings.chunk_semantic_merge_min_chars,
+            semantic_merge_max_chars=settings.chunk_semantic_merge_max_chars,
         )
     n = len(chunks)
     print("   块数:", n)

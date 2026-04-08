@@ -119,6 +119,30 @@ class Settings(BaseSettings):
         validation_alias="CHUNK_BOUNDARY_CLAMP_ADJUST_MAX_ROUNDS",
         description="重叠夹紧与句首二次对齐的最大往返轮数",
     )
+    chunk_semantic_merge_enabled: bool = Field(
+        default=False,
+        validation_alias="CHUNK_SEMANTIC_MERGE_ENABLED",
+        description="为 True 时启用相邻块语义相似度动态合并",
+    )
+    chunk_semantic_merge_threshold: float = Field(
+        default=0.82,
+        ge=0.0,
+        le=1.0,
+        validation_alias="CHUNK_SEMANTIC_MERGE_THRESHOLD",
+        description="相邻块语义相似度阈值（0-1）",
+    )
+    chunk_semantic_merge_min_chars: int = Field(
+        default=220,
+        ge=1,
+        validation_alias="CHUNK_SEMANTIC_MERGE_MIN_CHARS",
+        description="候选块低于该长度时优先尝试语义合并",
+    )
+    chunk_semantic_merge_max_chars: int = Field(
+        default=2200,
+        ge=1,
+        validation_alias="CHUNK_SEMANTIC_MERGE_MAX_CHARS",
+        description="语义合并后的最大字符长度上限",
+    )
 
     # --- 向量模型 ---
     bge_m3_path: str = Field(..., validation_alias="BGE_M3_PATH")
