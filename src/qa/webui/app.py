@@ -144,18 +144,39 @@ def api_qa_stream(request: Request, body: QAStreamBody) -> StreamingResponse:
             model_override = None
 
     def sse_gen():
-        for ev in stream_qa_events(
-            body.query.strip(),
-            settings=request.app.state.settings,
-            embedder=request.app.state.embedder,
-            es_client=request.app.state.es_client,
-            openai_client=oai,
-            k=body.k,
-            max_tokens=body.max_tokens,
-            conversation_id=body.conversation_id,
-            model_override=model_override,
-        ):
-            yield format_sse_event(ev)
+        try:
+            for ev in stream_qa_events(
+                body.query.strip(),
+                settings=request.app.state.settings,
+                embedder=request.app.state.embedder,
+                es_client=request.app.state.es_client,
+                openai_client=oai,
+                k=body.k,
+                max_tokens=body.max_tokens,
+                conversation_id=body.conversation_id,
+                model_override=model_override,
+            ):
+                yield format_sse_event(ev)
+        except Exception as e:
+            # 保证前端一定能收到错误与结束事件，避免一直处于“处理中”状态。
+            logger.exception("qa sse stream failed: {}", e)
+            yield format_sse_event(
+                {
+                    "type": "error",
+                    "message": "%s: %s" % (type(e).__name__, e),
+                }
+            )
+            yield format_sse_event(
+                {
+                    "type": "done",
+                    "ok": False,
+                    "total_ms": None,
+                    "ttft_ms": None,
+                    "rag_prefill_ms": None,
+                    "timings": {},
+                    "conversation_id": body.conversation_id,
+                }
+            )
 
     return StreamingResponse(
         sse_gen(),

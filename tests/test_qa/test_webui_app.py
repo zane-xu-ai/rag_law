@@ -112,3 +112,31 @@ def test_models_list(client: TestClient) -> None:
     providers = list(data["rankedModels"].keys())
     assert len(providers) > 0
     assert "Alibaba-Qwen" in providers
+
+
+def test_qa_stream_backend_exception_returns_error_event(client: TestClient) -> None:
+    """后端流式阶段抛异常时，应返回 SSE error/done，避免前端卡住。"""
+    import json
+    from unittest.mock import patch
+
+    def fake_raise(*a, **k):
+        raise PermissionError("access denied")
+        yield  # pragma: no cover
+
+    with patch("importlib.util.find_spec", return_value=object()):
+        with patch("qa.webui.app.stream_qa_events", fake_raise):
+            with client.stream(
+                "POST",
+                "/api/qa/stream",
+                json={"query": "hi"},
+            ) as r:
+                assert r.status_code == 200
+                body = "".join(r.iter_text())
+                lines = [ln for ln in body.split("\n") if ln.startswith("data:")]
+                assert len(lines) >= 2
+                first = json.loads(lines[0][5:].strip())
+                last = json.loads(lines[-1][5:].strip())
+                assert first["type"] == "error"
+                assert "PermissionError" in first["message"]
+                assert last["type"] == "done"
+                assert last["ok"] is False
