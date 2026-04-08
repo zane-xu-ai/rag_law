@@ -126,10 +126,16 @@ def _is_model_allowed(model_name: str, model_config: dict[str, Any]) -> bool:
 def _client_key(request: Request) -> str:
     xff = request.headers.get("X-Forwarded-For")
     if xff:
-        return xff.split(",")[0].strip()
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    x_real_ip = request.headers.get("X-Real-IP")
+    if x_real_ip and x_real_ip.strip():
+        return x_real_ip.strip()
     if request.client and request.client.host:
         return request.client.host
-    return "unknown"
+    # 极端情况下缺失客户端地址，避免把所有此类请求聚合到同一桶。
+    return f"unknown:{uuid.uuid4().hex[:8]}"
 
 
 def _enforce_rate_limit(request: Request) -> None:

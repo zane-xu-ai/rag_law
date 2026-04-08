@@ -158,3 +158,27 @@ def test_qa_stream_rate_limit_per_minute(client: TestClient) -> None:
             assert r1.status_code == 200
             assert r2.status_code == 200
             assert r3.status_code == 429
+
+
+def test_qa_stream_rate_limit_isolated_by_ip(client: TestClient) -> None:
+    """限流按 IP 维度隔离：A 超限不影响 B。"""
+    from unittest.mock import patch
+
+    def fake_events(*a, **k):
+        yield {"type": "start", "conversation_id": None, "offset_ms": 0.0}
+        yield {"type": "done", "ok": True, "total_ms": 1.0, "conversation_id": None}
+
+    with patch("importlib.util.find_spec", return_value=object()):
+        with patch("qa.webui.app.stream_qa_events", fake_events):
+            headers_a = {"X-Forwarded-For": "10.0.0.1"}
+            headers_b = {"X-Forwarded-For": "10.0.0.2"}
+
+            r1 = client.post("/api/qa/stream", json={"query": "a1"}, headers=headers_a)
+            r2 = client.post("/api/qa/stream", json={"query": "a2"}, headers=headers_a)
+            r3 = client.post("/api/qa/stream", json={"query": "a3"}, headers=headers_a)
+            rb = client.post("/api/qa/stream", json={"query": "b1"}, headers=headers_b)
+
+            assert r1.status_code == 200
+            assert r2.status_code == 200
+            assert r3.status_code == 429
+            assert rb.status_code == 200
