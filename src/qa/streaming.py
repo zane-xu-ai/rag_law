@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+import uuid
+from datetime import datetime, timezone
 from typing import Any, Iterator, Optional
 
 from loguru import logger
@@ -34,6 +36,95 @@ def _provider_from_base_url(base_url: str | None) -> str:
     if "openai" in b:
         return "openai"
     return "openai_compatible"
+
+
+def _brief_text(text: str, head: int = 20, tail: int = 20) -> str:
+    s = (text or "").replace("\n", " ").strip()
+    if len(s) <= head + tail:
+        return s
+    return f"{s[:head]}...{s[-tail:]}"
+
+
+def _brief_for_console(text: str) -> str:
+    return _brief_text(text, head=100, tail=100)
+
+
+def _qa_audit_retrieval_items(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for h in hits:
+        src = h.get("source") or {}
+        text = str(src.get("text", ""))
+        items.append(
+            {
+                "score": h.get("score"),
+                "doc_name": src.get("source_file") or src.get("doc_name"),
+                "doc_id": src.get("doc_id") or src.get("document_id") or h.get("id"),
+                "chunk_id": src.get("chunk_id") or src.get("chunk_index"),
+                "chunk_index": src.get("chunk_index"),
+                "text_brief": _brief_text(text),
+            }
+        )
+    return items
+
+
+def _emit_qa_audit_log(
+    *,
+    session_id: str,
+    query: str,
+    timings: dict[str, float],
+    k_eff: int,
+    hits: list[dict[str, Any]],
+    answer_text: str,
+    ok: bool,
+    error: str | None = None,
+) -> None:
+    logger.bind(
+        qa_audit=True,
+        event="qa_audit",
+        session_id=session_id,
+        query_text=query,
+        query_len=len(query),
+        stage_ok={
+            "embed_query": "embed_query" in timings,
+            "es_search_knn": "es_search_knn" in timings,
+            "llm_answer": bool(answer_text) and ok,
+        },
+        retrieval={
+            "k_requested": k_eff,
+            "hit_count": len(hits),
+            "hits": _qa_audit_retrieval_items(hits),
+        },
+        answer_text=answer_text,
+        ok=ok,
+        error=error,
+    ).info("qa_audit_record")
+
+
+def _emit_console_qa_summary(
+    *,
+    session_id: str,
+    query: str,
+    answer_text: str,
+    ok: bool,
+    total_ms: float | None,
+    ttft_ms: float | None,
+    hit_count: int,
+    k_eff: int,
+    error: str | None = None,
+) -> None:
+    logger.bind(
+        event="qa_console_summary",
+        session_id=session_id,
+        request_time=datetime.now(timezone.utc).isoformat(),
+        total_ms=total_ms,
+        ttft_ms=ttft_ms,
+        retrieval_k=k_eff,
+        retrieval_hit_count=hit_count,
+        ok=ok,
+        error=error,
+        query_brief=_brief_for_console(query),
+        answer_brief=_brief_for_console(answer_text),
+    ).info("qa_console_summary")
 
 
 def stream_qa_events(
@@ -71,6 +162,7 @@ def stream_qa_events(
     from qa.messages import build_messages
 
     t0 = _now()
+    qa_session_id = uuid.uuid4().hex
     step_start = t0
     timings: dict[str, float] = {}
 
@@ -296,6 +388,27 @@ def stream_qa_events(
             total_ms=total_ms,
             ok=False,
         ).warning("qa_stream_done")
+        _emit_console_qa_summary(
+            session_id=qa_session_id,
+            query=query,
+            answer_text="".join(full_text),
+            ok=False,
+            total_ms=total_ms,
+            ttft_ms=ttft_err,
+            hit_count=hit_count,
+            k_eff=k_eff,
+            error="%s: %s" % (type(e).__name__, e),
+        )
+        _emit_qa_audit_log(
+            session_id=qa_session_id,
+            query=query,
+            timings=dict(timings),
+            k_eff=k_eff,
+            hits=hits,
+            answer_text="".join(full_text),
+            ok=False,
+            error="%s: %s" % (type(e).__name__, e),
+        )
         yield {
             "type": "done",
             "ok": False,
@@ -375,6 +488,27 @@ def stream_qa_events(
         total_ms=total_ms_ok,
         ok=True,
     ).info("qa_stream_done")
+    _emit_console_qa_summary(
+        session_id=qa_session_id,
+        query=query,
+        answer_text="".join(full_text),
+        ok=True,
+        total_ms=total_ms_ok,
+        ttft_ms=ttft_ok,
+        hit_count=hit_count,
+        k_eff=k_eff,
+        error=None,
+    )
+    _emit_qa_audit_log(
+        session_id=qa_session_id,
+        query=query,
+        timings=dict(timings),
+        k_eff=k_eff,
+        hits=hits,
+        answer_text="".join(full_text),
+        ok=True,
+        error=None,
+    )
     yield {
         "type": "done",
         "ok": True,

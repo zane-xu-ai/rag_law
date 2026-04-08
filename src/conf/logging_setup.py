@@ -68,6 +68,7 @@ def configure_logging(settings: Settings, *, force: bool = False) -> None:
     kwargs: dict = {
         "level": level,
         "serialize": serialize,
+        "filter": lambda r: not r["extra"].get("qa_audit", False),
     }
     if not serialize:
         kwargs["format"] = (
@@ -85,7 +86,22 @@ def configure_logging(settings: Settings, *, force: bool = False) -> None:
         file_kw = dict(kwargs)
         file_kw["rotation"] = "10 MB"
         file_kw["retention"] = "7 days"
+        # 文件日志保留全部事件（包括 qa_audit）
+        file_kw.pop("filter", None)
         logger.add(str(log_path), **file_kw)
+
+    qa_audit_log_path = settings.qa_audit_log_file_resolved
+    if qa_audit_log_path is not None:
+        qa_audit_log_path.parent.mkdir(parents=True, exist_ok=True)
+        # 审计日志强制 JSON，确保 extra 字段完整可见（session_id、query_text、retrieval 等）。
+        audit_kw = {
+            "level": level,
+            "serialize": True,
+            "rotation": "10 MB",
+            "retention": "7 days",
+            "filter": lambda r: bool(r["extra"].get("qa_audit", False)),
+        }
+        logger.add(str(qa_audit_log_path), **audit_kw)
 
     _intercept_stdlib_logging()
     _configured = True

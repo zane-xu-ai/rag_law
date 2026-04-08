@@ -137,6 +137,10 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
     log_format: Literal["text", "json"] = Field(default="text", validation_alias="LOG_FORMAT")
     log_file: Optional[str] = Field(default=None, validation_alias="LOG_FILE")
+    qa_audit_log_file: Optional[str] = Field(
+        default="logs/qa-audit.log",
+        validation_alias="QA_AUDIT_LOG_FILE",
+    )
 
     # --- QA 监控 JSONL / ES；详见 doc/plan/v1.1.1-monitoring-plan.md §1.1 ---
     monitor_log_file: Optional[str] = Field(
@@ -256,6 +260,20 @@ class Settings(BaseSettings):
         if self.monitor_log_file is None:
             return None
         raw = str(self.monitor_log_file).strip()
+        if not raw:
+            return None
+        p = Path(raw).expanduser()
+        if p.is_absolute():
+            return p.resolve()
+        return (_PROJECT_ROOT / p).resolve()
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def qa_audit_log_file_resolved(self) -> Optional[Path]:
+        """`QA_AUDIT_LOG_FILE` 解析为绝对路径；未设置或空字符串时为 None。"""
+        if self.qa_audit_log_file is None:
+            return None
+        raw = str(self.qa_audit_log_file).strip()
         if not raw:
             return None
         p = Path(raw).expanduser()
