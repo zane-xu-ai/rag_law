@@ -1,0 +1,24 @@
+{
+  "source": "阿里云百炼控制台 - 向量模型免费额度列表",
+  "url": "https://bailian.console.aliyun.com/cn-beijing/?spm=a2c4g.11186623.0.0.5c053ba2xDn9Oe&tab=model#/model-usage/free-quota?modelType=Vector",
+  "captureTime": "2026-03-03 22:26",
+  "note": "向量模型（Vector）免费额度列表，按模型名称升序排列",
+  "totalModels": 14,
+  "sorted": true,
+  "models": [
+    "gte-rerank-v2",
+    "multimodal-embedding-v1",
+    "qwen2.5-vl-embedding",
+    "qwen3-rerank",
+    "qwen3-vl-embedding",
+    "qwen3-vl-rerank",
+    "text-embedding-async-v1",
+    "text-embedding-async-v2",
+    "text-embedding-v1",
+    "text-embedding-v2",
+    "text-embedding-v3",
+    "text-embedding-v4",
+    "tongyi-embedding-vision-flash",
+    "tongyi-embedding-vision-plus"
+  ]
+}

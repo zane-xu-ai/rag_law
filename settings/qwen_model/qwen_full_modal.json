@@ -1,0 +1,24 @@
+{
+  "source": "阿里云百炼控制台 - 全模态模型免费额度列表",
+  "url": "https://bailian.console.aliyun.com/cn-beijing/?spm=a2c4g.11186623.0.0.5c053ba2xDn9Oe&tab=model#/model-usage/free-quota?modelType=Multimodal",
+  "captureTime": "2026-03-03 22:01",
+  "note": "全模态模型（Multimodal）免费额度列表，按模型名称升序排列",
+  "totalModels": 14,
+  "sorted": true,
+  "models": [
+    "qwen-omni-turbo",
+    "qwen-omni-turbo-2025-01-19",
+    "qwen-omni-turbo-2025-03-26",
+    "qwen-omni-turbo-latest",
+    "qwen-omni-turbo-realtime",
+    "qwen-omni-turbo-realtime-2025-05-08",
+    "qwen-omni-turbo-realtime-latest",
+    "qwen2.5-omni-7b",
+    "qwen3-omni-flash",
+    "qwen3-omni-flash-2025-09-15",
+    "qwen3-omni-flash-2025-12-01",
+    "qwen3-omni-flash-realtime",
+    "qwen3-omni-flash-realtime-2025-09-15",
+    "qwen3-omni-flash-realtime-2025-12-01"
+  ]
+}
