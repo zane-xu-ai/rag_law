@@ -36,7 +36,7 @@ output.elasticsearch:
 logging.level: warning
 logging.to_files: true
 logging.files:
-  path: ${PROJECT_ROOT}/logs
+  path: ${PROJECT_ROOT}/logs/filebeat
   name: filebeat
   keepfiles: 7
   permissions: 0644
