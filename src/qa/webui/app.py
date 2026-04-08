@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import threading
 import time
 import uuid
+from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -57,6 +59,8 @@ async def lifespan(app: FastAPI):
     app.state.embedder = build_embedder(settings)
     app.state.es_client = elasticsearch_client(settings)
     app.state.model_config = settings.load_model_config()
+    app.state.qa_rate_limit_windows = {}
+    app.state.qa_rate_limit_lock = threading.Lock()
 
     if _openai_available():
         from openai import OpenAI
@@ -119,8 +123,42 @@ def _is_model_allowed(model_name: str, model_config: dict[str, Any]) -> bool:
     return False
 
 
+def _client_key(request: Request) -> str:
+    xff = request.headers.get("X-Forwarded-For")
+    if xff:
+        return xff.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _enforce_rate_limit(request: Request) -> None:
+    settings = request.app.state.settings
+    if not getattr(settings, "qa_rate_limit_enabled", True):
+        return
+    limit = int(getattr(settings, "qa_rate_limit_per_minute", 2))
+    now = time.time()
+    window_seconds = 60.0
+    key = _client_key(request)
+
+    windows: dict[str, deque[float]] = request.app.state.qa_rate_limit_windows
+    lock: threading.Lock = request.app.state.qa_rate_limit_lock
+    with lock:
+        q = windows.setdefault(key, deque())
+        while q and now - q[0] >= window_seconds:
+            q.popleft()
+        if len(q) >= limit:
+            retry_after = int(max(1, window_seconds - (now - q[0])))
+            raise HTTPException(
+                status_code=429,
+                detail=f"请求过于频繁：每分钟最多 {limit} 次，请 {retry_after}s 后重试",
+            )
+        q.append(now)
+
+
 @app.post("/api/qa/stream")
 def api_qa_stream(request: Request, body: QAStreamBody) -> StreamingResponse:
+    _enforce_rate_limit(request)
     if not _openai_available():
         raise HTTPException(
             status_code=503,

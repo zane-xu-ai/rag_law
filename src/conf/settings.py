@@ -183,6 +183,17 @@ class Settings(BaseSettings):
         validation_alias="MODEL_CONFIG_PATH",
         description="模型配置文件路径（相对项目根或绝对路径）",
     )
+    qa_rate_limit_enabled: bool = Field(
+        default=True,
+        validation_alias="QA_RATE_LIMIT_ENABLED",
+        description="是否开启 QA 接口限流",
+    )
+    qa_rate_limit_per_minute: int = Field(
+        default=2,
+        ge=1,
+        validation_alias="QA_RATE_LIMIT_PER_MINUTE",
+        description="每客户端每分钟允许请求次数（默认 2，用于测试）",
+    )
 
     @field_validator("log_level", mode="before")
     @classmethod

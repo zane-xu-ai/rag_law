@@ -140,3 +140,21 @@ def test_qa_stream_backend_exception_returns_error_event(client: TestClient) -> 
                 assert "PermissionError" in first["message"]
                 assert last["type"] == "done"
                 assert last["ok"] is False
+
+
+def test_qa_stream_rate_limit_per_minute(client: TestClient) -> None:
+    """默认限流：同一客户端每分钟仅允许 2 次，第三次返回 429。"""
+    from unittest.mock import patch
+
+    def fake_events(*a, **k):
+        yield {"type": "start", "conversation_id": None, "offset_ms": 0.0}
+        yield {"type": "done", "ok": True, "total_ms": 1.0, "conversation_id": None}
+
+    with patch("importlib.util.find_spec", return_value=object()):
+        with patch("qa.webui.app.stream_qa_events", fake_events):
+            r1 = client.post("/api/qa/stream", json={"query": "q1"})
+            r2 = client.post("/api/qa/stream", json={"query": "q2"})
+            r3 = client.post("/api/qa/stream", json={"query": "q3"})
+            assert r1.status_code == 200
+            assert r2.status_code == 200
+            assert r3.status_code == 429
