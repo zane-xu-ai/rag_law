@@ -70,6 +70,7 @@ def _qa_audit_retrieval_items(hits: list[dict[str, Any]]) -> list[dict[str, Any]
 def _emit_qa_audit_log(
     *,
     session_id: str,
+    client_ip: str | None,
     query: str,
     timings: dict[str, float],
     k_eff: int,
@@ -82,6 +83,7 @@ def _emit_qa_audit_log(
         qa_audit=True,
         event="qa_audit",
         session_id=session_id,
+        client_ip=client_ip,
         query_text=query,
         query_len=len(query),
         stage_ok={
@@ -138,6 +140,7 @@ def stream_qa_events(
     max_tokens: int = 2048,
     conversation_id: str | None = None,
     model_override: str | None = None,
+    client_ip: str | None = None,
 ) -> Iterator[dict[str, Any]]:
     """产出字典事件（由 HTTP 层序列化为 SSE）。
 
@@ -401,6 +404,7 @@ def stream_qa_events(
         )
         _emit_qa_audit_log(
             session_id=qa_session_id,
+            client_ip=client_ip,
             query=query,
             timings=dict(timings),
             k_eff=k_eff,
@@ -501,6 +505,7 @@ def stream_qa_events(
     )
     _emit_qa_audit_log(
         session_id=qa_session_id,
+        client_ip=client_ip,
         query=query,
         timings=dict(timings),
         k_eff=k_eff,

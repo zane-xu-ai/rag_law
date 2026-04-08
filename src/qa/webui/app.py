@@ -178,6 +178,7 @@ def api_qa_stream(request: Request, body: QAStreamBody) -> StreamingResponse:
         )
 
     model_override = body.model
+    client_ip = _client_key(request)
     if model_override:
         model_config = getattr(request.app.state, "model_config", {})
         if not _is_model_allowed(model_override, model_config):
@@ -199,6 +200,7 @@ def api_qa_stream(request: Request, body: QAStreamBody) -> StreamingResponse:
                 max_tokens=body.max_tokens,
                 conversation_id=body.conversation_id,
                 model_override=model_override,
+                client_ip=client_ip,
             ):
                 yield format_sse_event(ev)
         except Exception as e:
