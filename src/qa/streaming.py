@@ -46,6 +46,7 @@ def stream_qa_events(
     k: int | None = None,
     max_tokens: int = 2048,
     conversation_id: str | None = None,
+    model_override: str | None = None,
 ) -> Iterator[dict[str, Any]]:
     """产出字典事件（由 HTTP 层序列化为 SSE）。
 
@@ -182,9 +183,10 @@ def stream_qa_events(
         yield phase_cached("llm_client_ready")
 
     t_before_create = _now()
+    model_for_request = model_override or settings.model_name
     try:
         stream = oai.chat.completions.create(
-            model=settings.model_name,
+            model=model_for_request,
             messages=messages,
             max_tokens=max_tokens,
             stream=True,
@@ -193,7 +195,7 @@ def stream_qa_events(
     except _BadRequestError:
         # 某些 OpenAI 兼容实现不支持 stream_options；降级为无 usage 的流式。
         stream = oai.chat.completions.create(
-            model=settings.model_name,
+            model=model_for_request,
             messages=messages,
             max_tokens=max_tokens,
             stream=True,

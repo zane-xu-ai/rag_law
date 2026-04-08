@@ -101,3 +101,14 @@ def test_qa_stream_returns_sse_lines(client: TestClient) -> None:
                 assert len(lines) >= 1
                 obj = json.loads(lines[0][5:].strip())
                 assert obj["type"] == "start"
+
+
+def test_models_list(client: TestClient) -> None:
+    """验证 /api/models 返回内存中的模型配置。"""
+    r = client.get("/api/models")
+    assert r.status_code == 200
+    data = r.json()
+    assert "rankedModels" in data
+    providers = list(data["rankedModels"].keys())
+    assert len(providers) > 0
+    assert "Alibaba-Qwen" in providers

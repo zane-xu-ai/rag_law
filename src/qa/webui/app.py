@@ -39,6 +39,7 @@ class QAStreamBody(BaseModel):
     k: int | None = Field(default=None, ge=1, le=100)
     max_tokens: int = Field(default=2048, ge=1, le=32000)
     conversation_id: str | None = Field(default=None, max_length=128)
+    model: str | None = Field(default=None, max_length=256)
 
 
 @asynccontextmanager
@@ -55,6 +56,7 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.embedder = build_embedder(settings)
     app.state.es_client = elasticsearch_client(settings)
+    app.state.model_config = settings.load_model_config()
 
     if _openai_available():
         from openai import OpenAI
@@ -98,6 +100,25 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/models")
+def get_model_config(request: Request) -> dict:
+    """返回可用模型配置（按供应商分组）；启动时加载到内存。"""
+    config = getattr(request.app.state, "model_config", {})
+    if not config:
+        raise HTTPException(status_code=404, detail="Model config not loaded")
+    return config
+
+
+def _is_model_allowed(model_name: str, model_config: dict[str, Any]) -> bool:
+    ranked = model_config.get("rankedModels")
+    if not isinstance(ranked, dict):
+        return False
+    for models in ranked.values():
+        if isinstance(models, list) and model_name in models:
+            return True
+    return False
+
+
 @app.post("/api/qa/stream")
 def api_qa_stream(request: Request, body: QAStreamBody) -> StreamingResponse:
     if not _openai_available():
@@ -112,6 +133,16 @@ def api_qa_stream(request: Request, body: QAStreamBody) -> StreamingResponse:
             detail="OpenAI 客户端未初始化（启动时未安装 openai）",
         )
 
+    model_override = body.model
+    if model_override:
+        model_config = getattr(request.app.state, "model_config", {})
+        if not _is_model_allowed(model_override, model_config):
+            logger.warning(
+                "model override not allowed, fallback to default model: {}",
+                model_override,
+            )
+            model_override = None
+
     def sse_gen():
         for ev in stream_qa_events(
             body.query.strip(),
@@ -122,6 +153,7 @@ def api_qa_stream(request: Request, body: QAStreamBody) -> StreamingResponse:
             k=body.k,
             max_tokens=body.max_tokens,
             conversation_id=body.conversation_id,
+            model_override=model_override,
         ):
             yield format_sse_event(ev)
 

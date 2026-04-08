@@ -277,6 +277,45 @@
       letter-spacing: 0.05em;
     }
 
+    /* Model selector styles */
+    .model-selector {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .model-select {
+      background: var(--bg-input);
+      border: 2px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 0.9375rem;
+      padding: 0.625rem 0.875rem;
+      min-width: 140px;
+      cursor: pointer;
+      transition: border-color var(--transition);
+    }
+
+    .model-select:hover {
+      border-color: var(--accent);
+    }
+
+    .model-select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-light);
+    }
+
+    .model-select:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .model-select option {
+      background: var(--bg-card);
+      color: var(--text);
+    }
+
     input[type="number"] {
       width: 6rem;
       padding: 0.625rem 0.875rem;
@@ -829,6 +868,17 @@
           <label for="k">检索数量 k</label>
           <input type="number" id="k" min="1" max="20" placeholder="默认" />
         </div>
+        <div class="control-group">
+          <label>选择模型</label>
+          <div class="model-selector">
+            <select id="provider" class="model-select">
+              <option value="">-- 供应商 --</option>
+            </select>
+            <select id="model" class="model-select" disabled>
+              <option value="">-- 模型 --</option>
+            </select>
+          </div>
+        </div>
         <div class="btn-group">
           <button type="button" id="go" class="btn-primary">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -910,6 +960,8 @@
   </main>
 
   <script>
+    const $ = (id) => document.getElementById(id);
+
     // Theme management
     const themeToggle = document.getElementById('themeToggle');
     const html = document.documentElement;
@@ -938,6 +990,62 @@
       setTheme(target.dataset.value);
     });
 
+    // Model selector management
+    let modelData = null;
+    const providerSelect = $('provider');
+    const modelSelect = $('model');
+
+    async function loadModels() {
+      try {
+        const res = await fetch('/api/models');
+        if (!res.ok) throw new Error('Failed to load models');
+        modelData = await res.json();
+        populateProviders();
+      } catch (e) {
+        console.warn('Failed to load model list:', e);
+        // 下拉加载失败时不影响提问：回退服务端默认模型（不传 model 字段）
+        providerSelect.innerHTML = '<option value="">-- 默认模型 --</option>';
+        modelSelect.innerHTML = '<option value="">-- 使用配置默认模型 --</option>';
+        providerSelect.disabled = true;
+        modelSelect.disabled = true;
+      }
+    }
+
+    function populateProviders() {
+      if (!modelData || !modelData.rankedModels) return;
+      const providers = Object.keys(modelData.rankedModels);
+      providerSelect.innerHTML = '<option value="">-- 供应商 --</option>';
+      providers.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p;
+        providerSelect.appendChild(opt);
+      });
+    }
+
+    function populateModels(provider) {
+      modelSelect.innerHTML = '<option value="">-- 模型 --</option>';
+      if (!provider || !modelData || !modelData.rankedModels[provider]) {
+        modelSelect.disabled = true;
+        return;
+      }
+      const models = modelData.rankedModels[provider];
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        modelSelect.appendChild(opt);
+      });
+      modelSelect.disabled = false;
+    }
+
+    providerSelect.addEventListener('change', (e) => {
+      populateModels(e.target.value);
+    });
+
+    // Load models on init
+    loadModels();
+
     // Listen for system theme changes
     window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
       if (!localStorage.getItem('qa-theme')) {
@@ -948,7 +1056,6 @@
     initTheme();
 
     // QA functionality
-    const $ = (id) => document.getElementById(id);
 
     const phasesEl = $("phases");
     const retrievalEl = $("retrieval");
@@ -1057,6 +1164,8 @@
       const body = { query };
       const kVal = $("k").value.trim();
       if (kVal) body.k = parseInt(kVal, 10);
+      const modelVal = $("model").value;
+      if (modelVal) body.model = modelVal;
 
       try {
         const res = await fetch("/api/qa/stream", {

@@ -174,6 +174,11 @@ class Settings(BaseSettings):
         validation_alias="TOKEN_PRICE_VERSION",
         description="价格版本标识，写入监控文档便于回溯",
     )
+    model_config_path: str = Field(
+        default="settings/qwen_model/qwen_free_model_name_ranked.json",
+        validation_alias="MODEL_CONFIG_PATH",
+        description="模型配置文件路径（相对项目根或绝对路径）",
+    )
 
     @field_validator("log_level", mode="before")
     @classmethod
@@ -267,6 +272,27 @@ class Settings(BaseSettings):
         if p.is_absolute():
             return p.resolve()
         return (_PROJECT_ROOT / p).resolve()
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def model_config_path_resolved(self) -> Path:
+        """`MODEL_CONFIG_PATH` 解析为绝对路径。"""
+        raw = str(self.model_config_path).strip()
+        p = Path(raw).expanduser()
+        if p.is_absolute():
+            return p.resolve()
+        return (_PROJECT_ROOT / p).resolve()
+
+    def load_model_config(self) -> dict:
+        """加载模型配置文件内容；文件不存在返回空字典。"""
+        import json
+        path = self.model_config_path_resolved
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
 
     @computed_field  # type: ignore[prop-decorator]
     @property
