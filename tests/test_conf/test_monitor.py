@@ -10,6 +10,7 @@ import pytest
 
 from conf.monitor import build_qa_monitor_document, write_qa_monitor_record
 from conf.settings import get_settings
+from conf.token_cost import LlmCost, LlmUsage
 
 
 def _minimal_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -50,6 +51,50 @@ def test_build_qa_monitor_document_has_core_fields(monkeypatch: pytest.MonkeyPat
     assert doc["query_len"] == 2
     assert "query_fp" in doc
     assert "@timestamp" in doc
+
+
+def test_build_qa_monitor_document_with_llm_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    _minimal_env(monkeypatch)
+    get_settings.cache_clear()
+    s = get_settings()
+    doc = build_qa_monitor_document(
+        settings=s,
+        query="hi",
+        timings={"embed_query": 1.0, "es_search_knn": 2.0},
+        k_eff=5,
+        hit_count=3,
+        total_ms=100.0,
+        ttft_ms=40.0,
+        rag_prefill_ms=50.0,
+        llm_total_ms=45.0,
+        ok=True,
+        conversation_id=None,
+        max_tokens=2048,
+        model_name="qwen-plus",
+        provider="dashscope",
+        usage=LlmUsage(
+            input_tokens=120,
+            output_tokens=30,
+            total_tokens=150,
+            reasoning_tokens=10,
+            cached_tokens=0,
+        ),
+        cost=LlmCost(
+            currency="CNY",
+            input_cost=0.1,
+            output_cost=0.2,
+            reasoning_cost=None,
+            total_cost=0.3,
+            price_version="v1",
+            price_source="doc/price_api/qwen.md",
+        ),
+    )
+    assert doc["llm"]["model"] == "qwen-plus"
+    assert doc["llm"]["provider"] == "dashscope"
+    assert doc["llm"]["usage"]["input_tokens"] == 120
+    assert doc["llm"]["usage"]["output_tokens"] == 30
+    assert doc["llm"]["usage"]["reasoning_tokens"] == 10
+    assert doc["llm"]["cost"]["total_cost"] == 0.3
 
 
 def test_write_qa_monitor_record_jsonl(

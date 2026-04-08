@@ -10,6 +10,7 @@ from typing import Any
 from loguru import logger
 
 from conf.settings import Settings
+from conf.token_cost import LlmCost, LlmUsage
 
 
 def utc_now_iso() -> str:
@@ -34,9 +35,13 @@ def build_qa_monitor_document(
     ok: bool,
     conversation_id: str | None,
     max_tokens: int,
+    model_name: str | None = None,
+    provider: str | None = None,
+    usage: LlmUsage | None = None,
+    cost: LlmCost | None = None,
 ) -> dict[str, Any]:
     """单条监控文档（与 v1.1.1 计划 §1.1 字段对齐）；不含用户原文。"""
-    return {
+    doc = {
         "@timestamp": utc_now_iso(),
         "service": "rag-law-qa",
         "event": "qa_request",
@@ -55,6 +60,32 @@ def build_qa_monitor_document(
         "es_search_knn_ms": timings.get("es_search_knn"),
         "timings": dict(timings),
     }
+    if model_name is not None or provider is not None or usage is not None or cost is not None:
+        llm_doc: dict[str, Any] = {}
+        if model_name is not None:
+            llm_doc["model"] = model_name
+        if provider is not None:
+            llm_doc["provider"] = provider
+        if usage is not None:
+            llm_doc["usage"] = {
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "total_tokens": usage.total_tokens,
+                "reasoning_tokens": usage.reasoning_tokens,
+                "cached_tokens": usage.cached_tokens,
+            }
+        if cost is not None:
+            llm_doc["cost"] = {
+                "currency": cost.currency,
+                "input_cost": cost.input_cost,
+                "output_cost": cost.output_cost,
+                "reasoning_cost": cost.reasoning_cost,
+                "total_cost": cost.total_cost,
+                "price_version": cost.price_version,
+                "price_source": cost.price_source,
+            }
+        doc["llm"] = llm_doc
+    return doc
 
 
 def write_qa_monitor_record(

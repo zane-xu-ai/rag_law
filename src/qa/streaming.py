@@ -10,6 +10,7 @@ from typing import Any, Iterator, Optional
 from loguru import logger
 
 from conf.monitor import build_qa_monitor_document, write_qa_monitor_record
+from conf.token_cost import LlmCost, LlmUsage, estimate_qwen_cost_from_doc, extract_usage
 
 
 def _now() -> float:
@@ -22,6 +23,17 @@ def _ms(dt: float) -> float:
 
 def _query_fp(q: str) -> str:
     return hashlib.sha256(q.encode("utf-8")).hexdigest()[:16]
+
+
+def _provider_from_base_url(base_url: str | None) -> str:
+    if not base_url:
+        return "openai_compatible"
+    b = str(base_url).lower()
+    if "dashscope" in b or "aliyuncs" in b:
+        return "dashscope"
+    if "openai" in b:
+        return "openai"
+    return "openai_compatible"
 
 
 def stream_qa_events(
@@ -49,6 +61,11 @@ def stream_qa_events(
     from es_store.client import elasticsearch_client
     from es_store.store import EsChunkStore
     from openai import OpenAI
+
+    try:
+        from openai import BadRequestError as _BadRequestError
+    except Exception:  # pragma: no cover - 仅用于测试桩模块兼容
+        _BadRequestError = Exception
 
     from qa.messages import build_messages
 
@@ -165,12 +182,22 @@ def stream_qa_events(
         yield phase_cached("llm_client_ready")
 
     t_before_create = _now()
-    stream = oai.chat.completions.create(
-        model=settings.model_name,
-        messages=messages,
-        max_tokens=max_tokens,
-        stream=True,
-    )
+    try:
+        stream = oai.chat.completions.create(
+            model=settings.model_name,
+            messages=messages,
+            max_tokens=max_tokens,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+    except _BadRequestError:
+        # 某些 OpenAI 兼容实现不支持 stream_options；降级为无 usage 的流式。
+        stream = oai.chat.completions.create(
+            model=settings.model_name,
+            messages=messages,
+            max_tokens=max_tokens,
+            stream=True,
+        )
     t_after_create = _now()
     step_start = t_before_create
     timings["llm_stream_open"] = _ms(t_after_create - t_before_create)
@@ -186,9 +213,16 @@ def stream_qa_events(
     first_token_wall: float | None = None
     body_start: float | None = None
     full_text: list[str] = []
+    usage: LlmUsage | None = None
+    model_name_runtime: str | None = None
 
     try:
         for chunk in stream:
+            if model_name_runtime is None:
+                model_name_runtime = getattr(chunk, "model", None)
+            maybe_usage = extract_usage(chunk)
+            if maybe_usage is not None:
+                usage = maybe_usage
             choice = chunk.choices[0] if chunk.choices else None
             delta = None
             if choice and choice.delta:
@@ -220,6 +254,16 @@ def stream_qa_events(
         total_ms = _ms(t_end - t0)
         llm_total_err = _ms(t_end - t_after_create)
         ttft_err = _ms(first_token_wall - t0) if first_token_wall else None
+        provider = _provider_from_base_url(getattr(settings, "model_base_url", None))
+        model_for_cost = model_name_runtime or settings.model_name
+        cost: LlmCost | None = None
+        if settings.token_cost_enabled and usage is not None:
+            cost = estimate_qwen_cost_from_doc(
+                price_doc=settings.token_price_doc_resolved,
+                model_name=model_for_cost,
+                usage=usage,
+                price_version=settings.token_price_version,
+            )
         write_qa_monitor_record(
             settings,
             es_client=es_client,
@@ -236,6 +280,10 @@ def stream_qa_events(
                 ok=False,
                 conversation_id=cid,
                 max_tokens=max_tokens,
+                model_name=model_for_cost,
+                provider=provider,
+                usage=usage,
+                cost=cost,
             ),
         )
         logger.bind(
@@ -285,6 +333,16 @@ def stream_qa_events(
     total_ms_ok = _ms(t_final - t0)
     llm_total_ok = _ms(t_end - t_after_create)
     ttft_ok = _ms(first_token_wall - t0) if first_token_wall else None
+    provider = _provider_from_base_url(getattr(settings, "model_base_url", None))
+    model_for_cost = model_name_runtime or settings.model_name
+    cost: LlmCost | None = None
+    if settings.token_cost_enabled and usage is not None:
+        cost = estimate_qwen_cost_from_doc(
+            price_doc=settings.token_price_doc_resolved,
+            model_name=model_for_cost,
+            usage=usage,
+            price_version=settings.token_price_version,
+        )
     write_qa_monitor_record(
         settings,
         es_client=es_client,
@@ -301,6 +359,10 @@ def stream_qa_events(
             ok=True,
             conversation_id=cid,
             max_tokens=max_tokens,
+            model_name=model_for_cost,
+            provider=provider,
+            usage=usage,
+            cost=cost,
         ),
     )
     logger.bind(

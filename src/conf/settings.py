@@ -154,6 +154,26 @@ class Settings(BaseSettings):
         validation_alias="MONITOR_ES_ENABLED",
         description="为 True 时将监控记录写入 monitor_es_index",
     )
+    token_cost_enabled: bool = Field(
+        default=True,
+        validation_alias="TOKEN_COST_ENABLED",
+        description="为 True 时尝试从 LLM usage 与价格表计算单次 token 成本",
+    )
+    token_price_doc: str = Field(
+        default="doc/price_api/qwen.md",
+        validation_alias="TOKEN_PRICE_DOC",
+        description="价格文档路径（相对项目根或绝对路径）",
+    )
+    token_price_region: str = Field(
+        default="中国内地",
+        validation_alias="TOKEN_PRICE_REGION",
+        description="价格区域（当前支持从 qwen.md 提取中国内地区段）",
+    )
+    token_price_version: str = Field(
+        default="qwen-md-v1",
+        validation_alias="TOKEN_PRICE_VERSION",
+        description="价格版本标识，写入监控文档便于回溯",
+    )
 
     @field_validator("log_level", mode="before")
     @classmethod
@@ -233,6 +253,16 @@ class Settings(BaseSettings):
         raw = str(self.monitor_log_file).strip()
         if not raw:
             return None
+        p = Path(raw).expanduser()
+        if p.is_absolute():
+            return p.resolve()
+        return (_PROJECT_ROOT / p).resolve()
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def token_price_doc_resolved(self) -> Path:
+        """`TOKEN_PRICE_DOC` 解析为绝对路径。"""
+        raw = str(self.token_price_doc).strip()
         p = Path(raw).expanduser()
         if p.is_absolute():
             return p.resolve()
