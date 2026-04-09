@@ -124,6 +124,11 @@ class Settings(BaseSettings):
         validation_alias="CHUNK_SEMANTIC_MERGE_ENABLED",
         description="为 True 时启用相邻块语义相似度动态合并",
     )
+    chunk_semantic_merge_similarity: Literal["char_ngram", "embedding"] = Field(
+        default="char_ngram",
+        validation_alias="CHUNK_SEMANTIC_MERGE_SIMILARITY",
+        description="语义合并相似度：char_ngram（默认）或 embedding（BGE 余弦，需入库时注入 embedder）",
+    )
     chunk_semantic_merge_threshold: float = Field(
         default=0.82,
         ge=0.0,

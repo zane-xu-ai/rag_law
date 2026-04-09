@@ -83,6 +83,15 @@ def main() -> int:
     settings = get_settings()
     configure_logging(settings)
 
+    merge_embedder = None
+    if (
+        settings.chunk_semantic_merge_enabled
+        and settings.chunk_semantic_merge_similarity == "embedding"
+    ):
+        from embeddings import build_embedder
+
+        merge_embedder = build_embedder(settings)
+
     print("1) 切分 + 每文件 SHA256 …")
     if args.files:
         md_paths = [_resolve_project_path(p) for p in args.files]
@@ -96,6 +105,8 @@ def main() -> int:
             md_paths=md_paths,
             boundary_aware=args.boundary_aware,
             semantic_merge_enabled=settings.chunk_semantic_merge_enabled,
+            semantic_merge_similarity=settings.chunk_semantic_merge_similarity,
+            embedding_backend=merge_embedder,
             semantic_merge_threshold=settings.chunk_semantic_merge_threshold,
             semantic_merge_min_chars=settings.chunk_semantic_merge_min_chars,
             semantic_merge_max_chars=settings.chunk_semantic_merge_max_chars,
@@ -105,6 +116,8 @@ def main() -> int:
             args.data_dir if args.data_dir is not None else _ROOT / "data",
             boundary_aware=args.boundary_aware,
             semantic_merge_enabled=settings.chunk_semantic_merge_enabled,
+            semantic_merge_similarity=settings.chunk_semantic_merge_similarity,
+            embedding_backend=merge_embedder,
             semantic_merge_threshold=settings.chunk_semantic_merge_threshold,
             semantic_merge_min_chars=settings.chunk_semantic_merge_min_chars,
             semantic_merge_max_chars=settings.chunk_semantic_merge_max_chars,
@@ -125,7 +138,7 @@ def main() -> int:
     print("2) 向量编码 …")
     from embeddings import build_embedder
 
-    embedder = build_embedder(settings)
+    embedder = merge_embedder if merge_embedder is not None else build_embedder(settings)
     texts = [c.text for c in chunks]
     embeddings = embedder.embed_documents(texts)
     if len(embeddings) != n:

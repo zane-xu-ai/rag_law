@@ -6,11 +6,12 @@ from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from loguru import logger
 
 from conf.settings import get_settings, project_root
+from embeddings.base import EmbeddingBackend
 
 from chunking.boundary import (
     DEFAULT_MAX_PROBE,
@@ -87,23 +88,26 @@ def _cosine_sim_counter(a: Counter[str], b: Counter[str]) -> float:
     return dot / (na * nb)
 
 
-def semantic_merge_chunks(
+def _cosine_dense(a: list[float], b: list[float]) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = 0.0
+    for x, y in zip(a, b, strict=True):
+        dot += x * y
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(y * y for y in b) ** 0.5
+    if na <= 0.0 or nb <= 0.0:
+        return 0.0
+    return dot / (na * nb)
+
+
+def _semantic_merge_chunks_char_ngram(
     chunks: list[TextChunk],
     *,
     similarity_threshold: float,
     min_chunk_chars: int,
     max_chunk_chars: int,
 ) -> tuple[list[TextChunk], dict[str, float]]:
-    """相邻块语义动态合并（轻量版：字符 2-gram 余弦相似度）。"""
-    if not chunks:
-        return [], {
-            "before_count": 0.0,
-            "after_count": 0.0,
-            "merge_ratio": 0.0,
-            "merge_hits": 0.0,
-            "merge_checks": 0.0,
-            "threshold_hit_rate": 0.0,
-        }
     merged: list[TextChunk] = []
     merge_hits = 0
     merge_checks = 0
@@ -154,6 +158,112 @@ def semantic_merge_chunks(
     return merged, stats
 
 
+def _semantic_merge_chunks_embedding(
+    chunks: list[TextChunk],
+    *,
+    similarity_threshold: float,
+    min_chunk_chars: int,
+    max_chunk_chars: int,
+    embedder: EmbeddingBackend,
+) -> tuple[list[TextChunk], dict[str, float]]:
+    """相邻块合并：用 BGE 等稠密向量余弦相似度（与入库向量一致）。"""
+    merged: list[TextChunk] = []
+    merge_hits = 0
+    merge_checks = 0
+
+    pre = embedder.embed_documents([c.text for c in chunks])
+    if len(pre) != len(chunks):
+        raise RuntimeError("embed_documents 返回条数与块数不一致")
+
+    current = chunks[0]
+    current_e = pre[0]
+
+    for i in range(1, len(chunks)):
+        nxt = chunks[i]
+        nxt_e = pre[i]
+        cand_len = len(current.text) + len(nxt.text)
+        allow_by_len = len(current.text) < min_chunk_chars and cand_len <= max_chunk_chars
+        merge_checks += 1
+        sim = _cosine_dense(current_e, nxt_e)
+        if allow_by_len and sim >= similarity_threshold:
+            joiner = "" if current.text.endswith(("\n", "。", "！", "？", ";", "；")) else "\n"
+            merged_text = f"{current.text}{joiner}{nxt.text}"
+            current = TextChunk(
+                text=merged_text,
+                source_file=current.source_file,
+                chunk_index=current.chunk_index,
+                char_start=current.char_start,
+                char_end=nxt.char_end,
+                source_path=current.source_path,
+                source_id=current.source_id,
+                mime_type=current.mime_type,
+                doc_type=current.doc_type,
+                domain=current.domain,
+                extra=current.extra,
+            )
+            current_e = embedder.embed_documents([merged_text])[0]
+            merge_hits += 1
+        else:
+            merged.append(current)
+            current = nxt
+            current_e = nxt_e
+
+    merged.append(current)
+
+    for j, c in enumerate(merged):
+        c.chunk_index = j
+
+    hit_rate = (merge_hits / merge_checks) if merge_checks > 0 else 0.0
+    stats = {
+        "before_count": float(len(chunks)),
+        "after_count": float(len(merged)),
+        "merge_ratio": float(len(merged)) / float(len(chunks)),
+        "merge_hits": float(merge_hits),
+        "merge_checks": float(merge_checks),
+        "threshold_hit_rate": hit_rate,
+    }
+    return merged, stats
+
+
+def semantic_merge_chunks(
+    chunks: list[TextChunk],
+    *,
+    similarity_threshold: float,
+    min_chunk_chars: int,
+    max_chunk_chars: int,
+    similarity_backend: Literal["char_ngram", "embedding"] = "char_ngram",
+    embedder: EmbeddingBackend | None = None,
+) -> tuple[list[TextChunk], dict[str, float]]:
+    """相邻块语义动态合并：char_ngram（2-gram 余弦）或 embedding（BGE 余弦）。"""
+    if not chunks:
+        return [], {
+            "before_count": 0.0,
+            "after_count": 0.0,
+            "merge_ratio": 0.0,
+            "merge_hits": 0.0,
+            "merge_checks": 0.0,
+            "threshold_hit_rate": 0.0,
+        }
+    if similarity_backend == "embedding":
+        if embedder is None:
+            raise ValueError(
+                "semantic_merge 使用 embedding 时须传入 embedder（例如 embeddings.build_embedder(settings)）",
+            )
+        return _semantic_merge_chunks_embedding(
+            chunks,
+            similarity_threshold=similarity_threshold,
+            min_chunk_chars=min_chunk_chars,
+            max_chunk_chars=max_chunk_chars,
+            embedder=embedder,
+        )
+    return _semantic_merge_chunks_char_ngram(
+        chunks,
+        similarity_threshold=similarity_threshold,
+        min_chunk_chars=min_chunk_chars,
+        max_chunk_chars=max_chunk_chars,
+    )
+
+
 def iter_chunks_for_text(
     full_text: str,
     *,
@@ -171,6 +281,8 @@ def iter_chunks_for_text(
     boundary_priority_overlap: Optional[bool] = None,
     clamp_adjust_max_rounds: Optional[int] = None,
     semantic_merge_enabled: bool = False,
+    semantic_merge_similarity: Literal["char_ngram", "embedding"] = "char_ngram",
+    embedding_backend: EmbeddingBackend | None = None,
     semantic_merge_threshold: float = 0.82,
     semantic_merge_min_chars: int = 220,
     semantic_merge_max_chars: int = 2200,
@@ -217,16 +329,23 @@ def iter_chunks_for_text(
             )
         )
     if semantic_merge_enabled and chunks:
+        if semantic_merge_similarity == "embedding" and embedding_backend is None:
+            raise ValueError(
+                "semantic_merge_similarity=embedding 时须提供 embedding_backend（如 ingest 中 build_embedder）",
+            )
         before = len(chunks)
         chunks, stats = semantic_merge_chunks(
             chunks,
             similarity_threshold=semantic_merge_threshold,
             min_chunk_chars=semantic_merge_min_chars,
             max_chunk_chars=semantic_merge_max_chars,
+            similarity_backend=semantic_merge_similarity,
+            embedder=embedding_backend,
         )
         logger.bind(
             event="chunk_semantic_merge",
             source_file=source_file,
+            similarity_backend=semantic_merge_similarity,
             before_count=before,
             after_count=len(chunks),
             merge_ratio=stats["merge_ratio"],
@@ -249,6 +368,8 @@ def iter_file_chunks(
     boundary_priority_overlap: Optional[bool] = None,
     clamp_adjust_max_rounds: Optional[int] = None,
     semantic_merge_enabled: bool = False,
+    semantic_merge_similarity: Literal["char_ngram", "embedding"] = "char_ngram",
+    embedding_backend: EmbeddingBackend | None = None,
     semantic_merge_threshold: float = 0.82,
     semantic_merge_min_chars: int = 220,
     semantic_merge_max_chars: int = 2200,
@@ -278,6 +399,8 @@ def iter_file_chunks(
         boundary_priority_overlap=boundary_priority_overlap,
         clamp_adjust_max_rounds=clamp_adjust_max_rounds,
         semantic_merge_enabled=semantic_merge_enabled,
+        semantic_merge_similarity=semantic_merge_similarity,
+        embedding_backend=embedding_backend,
         semantic_merge_threshold=semantic_merge_threshold,
         semantic_merge_min_chars=semantic_merge_min_chars,
         semantic_merge_max_chars=semantic_merge_max_chars,
@@ -297,6 +420,8 @@ def iter_chunks_for_data_dir(
     boundary_priority_overlap: Optional[bool] = None,
     clamp_adjust_max_rounds: Optional[int] = None,
     semantic_merge_enabled: bool = False,
+    semantic_merge_similarity: Literal["char_ngram", "embedding"] | None = None,
+    embedding_backend: EmbeddingBackend | None = None,
     semantic_merge_threshold: float = 0.82,
     semantic_merge_min_chars: int = 220,
     semantic_merge_max_chars: int = 2200,
@@ -319,6 +444,14 @@ def iter_chunks_for_data_dir(
     eff_sem_th = semantic_merge_threshold
     eff_sem_min = semantic_merge_min_chars
     eff_sem_max = semantic_merge_max_chars
+    if semantic_merge_similarity is not None:
+        eff_sem_sim = semantic_merge_similarity
+    elif s is not None:
+        eff_sem_sim = s.chunk_semantic_merge_similarity
+    else:
+        # 与未引入本字段前一致：显式 chunk_size/overlap 且未传 merge 相关参数时不强制读 Settings（便于单测）
+        eff_sem_sim = "char_ngram"
+    eff_embed = embedding_backend
     if boundary_aware:
         if s is None:
             s = get_settings()
@@ -351,6 +484,8 @@ def iter_chunks_for_data_dir(
             boundary_priority_overlap=eff_bpo,
             clamp_adjust_max_rounds=eff_car,
             semantic_merge_enabled=eff_sem_enabled,
+            semantic_merge_similarity=eff_sem_sim,
+            embedding_backend=eff_embed,
             semantic_merge_threshold=eff_sem_th,
             semantic_merge_min_chars=eff_sem_min,
             semantic_merge_max_chars=eff_sem_max,
@@ -370,6 +505,8 @@ def load_all_chunks(
     boundary_priority_overlap: Optional[bool] = None,
     clamp_adjust_max_rounds: Optional[int] = None,
     semantic_merge_enabled: bool = False,
+    semantic_merge_similarity: Literal["char_ngram", "embedding"] | None = None,
+    embedding_backend: EmbeddingBackend | None = None,
     semantic_merge_threshold: float = 0.82,
     semantic_merge_min_chars: int = 220,
     semantic_merge_max_chars: int = 2200,
@@ -388,6 +525,8 @@ def load_all_chunks(
             boundary_priority_overlap=boundary_priority_overlap,
             clamp_adjust_max_rounds=clamp_adjust_max_rounds,
             semantic_merge_enabled=semantic_merge_enabled,
+            semantic_merge_similarity=semantic_merge_similarity,
+            embedding_backend=embedding_backend,
             semantic_merge_threshold=semantic_merge_threshold,
             semantic_merge_min_chars=semantic_merge_min_chars,
             semantic_merge_max_chars=semantic_merge_max_chars,

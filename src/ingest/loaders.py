@@ -8,6 +8,7 @@ from typing import Optional
 
 from chunking.split import TextChunk, iter_file_chunks
 from conf.settings import get_settings, project_root
+from embeddings.base import EmbeddingBackend
 
 from ingest.documents import sha256_utf8_file
 
@@ -27,6 +28,7 @@ def _resolve_chunking_params(
     semantic_merge_threshold: float = 0.82,
     semantic_merge_min_chars: int = 220,
     semantic_merge_max_chars: int = 2200,
+    semantic_merge_similarity: Optional[str] = None,
 ) -> tuple[
     int,
     int,
@@ -41,6 +43,7 @@ def _resolve_chunking_params(
     float,
     int,
     int,
+    str,
 ]:
     """与 `iter_chunks_for_data_dir_with_sha256` 相同的配置解析。"""
     s = None
@@ -55,6 +58,12 @@ def _resolve_chunking_params(
     eff_sem_th = semantic_merge_threshold
     eff_sem_min = semantic_merge_min_chars
     eff_sem_max = semantic_merge_max_chars
+    if semantic_merge_similarity is not None:
+        eff_sem_sim = semantic_merge_similarity
+    elif s is not None:
+        eff_sem_sim = s.chunk_semantic_merge_similarity
+    else:
+        eff_sem_sim = "char_ngram"
     if boundary_aware:
         if s is None:
             s = get_settings()
@@ -84,6 +93,7 @@ def _resolve_chunking_params(
         eff_sem_th,
         eff_sem_min,
         eff_sem_max,
+        eff_sem_sim,
     )
 
 
@@ -103,6 +113,8 @@ def _iter_chunks_for_md_files_with_sha256(
     semantic_merge_threshold: float,
     semantic_merge_min_chars: int,
     semantic_merge_max_chars: int,
+    semantic_merge_similarity: str,
+    embedding_backend: EmbeddingBackend | None,
 ) -> Iterator[tuple[TextChunk, str]]:
     for md in md_files:
         file_sha = sha256_utf8_file(md)
@@ -118,6 +130,8 @@ def _iter_chunks_for_md_files_with_sha256(
             boundary_priority_overlap=eff_bpo,
             clamp_adjust_max_rounds=eff_car,
             semantic_merge_enabled=semantic_merge_enabled,
+            semantic_merge_similarity=semantic_merge_similarity,
+            embedding_backend=embedding_backend,
             semantic_merge_threshold=semantic_merge_threshold,
             semantic_merge_min_chars=semantic_merge_min_chars,
             semantic_merge_max_chars=semantic_merge_max_chars,
@@ -141,6 +155,8 @@ def iter_chunks_for_data_dir_with_sha256(
     semantic_merge_threshold: float = 0.82,
     semantic_merge_min_chars: int = 220,
     semantic_merge_max_chars: int = 2200,
+    semantic_merge_similarity: Optional[str] = None,
+    embedding_backend: EmbeddingBackend | None = None,
 ) -> Iterator[tuple[TextChunk, str]]:
     """与 `iter_chunks_for_data_dir` 相同遍历顺序；每个 chunk 附带该文件 `sha256.hexdigest()`。"""
     (
@@ -157,6 +173,7 @@ def iter_chunks_for_data_dir_with_sha256(
         eff_sem_th,
         eff_sem_min,
         eff_sem_max,
+        eff_sem_sim,
     ) = _resolve_chunking_params(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
@@ -171,6 +188,7 @@ def iter_chunks_for_data_dir_with_sha256(
         semantic_merge_threshold=semantic_merge_threshold,
         semantic_merge_min_chars=semantic_merge_min_chars,
         semantic_merge_max_chars=semantic_merge_max_chars,
+        semantic_merge_similarity=semantic_merge_similarity,
     )
     base = data_dir if data_dir is not None else root / "data"
     if not base.is_dir():
@@ -192,6 +210,8 @@ def iter_chunks_for_data_dir_with_sha256(
         semantic_merge_threshold=eff_sem_th,
         semantic_merge_min_chars=eff_sem_min,
         semantic_merge_max_chars=eff_sem_max,
+        semantic_merge_similarity=eff_sem_sim,
+        embedding_backend=embedding_backend,
     )
 
 
@@ -211,6 +231,8 @@ def iter_chunks_for_paths_with_sha256(
     semantic_merge_threshold: float = 0.82,
     semantic_merge_min_chars: int = 220,
     semantic_merge_max_chars: int = 2200,
+    semantic_merge_similarity: Optional[str] = None,
+    embedding_backend: EmbeddingBackend | None = None,
 ) -> Iterator[tuple[TextChunk, str]]:
     """按给定 Markdown 文件路径列表切分（排序后）；与目录遍历语义一致。"""
     if not paths:
@@ -238,6 +260,7 @@ def iter_chunks_for_paths_with_sha256(
         eff_sem_th,
         eff_sem_min,
         eff_sem_max,
+        eff_sem_sim,
     ) = _resolve_chunking_params(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
@@ -252,6 +275,7 @@ def iter_chunks_for_paths_with_sha256(
         semantic_merge_threshold=semantic_merge_threshold,
         semantic_merge_min_chars=semantic_merge_min_chars,
         semantic_merge_max_chars=semantic_merge_max_chars,
+        semantic_merge_similarity=semantic_merge_similarity,
     )
     yield from _iter_chunks_for_md_files_with_sha256(
         md_files,
@@ -268,6 +292,8 @@ def iter_chunks_for_paths_with_sha256(
         semantic_merge_threshold=eff_sem_th,
         semantic_merge_min_chars=eff_sem_min,
         semantic_merge_max_chars=eff_sem_max,
+        semantic_merge_similarity=eff_sem_sim,
+        embedding_backend=embedding_backend,
     )
 
 
@@ -288,6 +314,8 @@ def load_chunks_with_sha256(
     semantic_merge_threshold: float = 0.82,
     semantic_merge_min_chars: int = 220,
     semantic_merge_max_chars: int = 2200,
+    semantic_merge_similarity: Optional[str] = None,
+    embedding_backend: EmbeddingBackend | None = None,
 ) -> tuple[list[TextChunk], list[str]]:
     """返回 `(chunks, file_sha_per_chunk)`，两列表等长。
 
@@ -310,6 +338,8 @@ def load_chunks_with_sha256(
                 semantic_merge_threshold=semantic_merge_threshold,
                 semantic_merge_min_chars=semantic_merge_min_chars,
                 semantic_merge_max_chars=semantic_merge_max_chars,
+                semantic_merge_similarity=semantic_merge_similarity,
+                embedding_backend=embedding_backend,
             )
         )
     else:
@@ -329,6 +359,8 @@ def load_chunks_with_sha256(
                 semantic_merge_threshold=semantic_merge_threshold,
                 semantic_merge_min_chars=semantic_merge_min_chars,
                 semantic_merge_max_chars=semantic_merge_max_chars,
+                semantic_merge_similarity=semantic_merge_similarity,
+                embedding_backend=embedding_backend,
             )
         )
     if not pairs:

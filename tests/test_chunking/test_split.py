@@ -141,6 +141,96 @@ def test_semantic_merge_chunks_keep_low_similarity() -> None:
     assert stats["merge_hits"] == 0
 
 
+class _FakeEmbedUniform:
+    """测试用：同维常数向量，相邻余弦相似度为 1。"""
+
+    dense_dimension = 4
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        v = [0.5, 0.5, 0.5, 0.5]
+        return [list(v) for _ in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_documents([text])[0]
+
+
+class _FakeEmbedOrthogonal:
+    """测试用：按块下标交替两种正交向量，相邻相似度为 0。"""
+
+    dense_dimension = 2
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        out: list[list[float]] = []
+        for i, _ in enumerate(texts):
+            out.append([1.0, 0.0] if i % 2 == 0 else [0.0, 1.0])
+        return out
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_documents([text])[0]
+
+
+def test_semantic_merge_chunks_embedding_merges_when_similar() -> None:
+    chunks = [
+        TextChunk("a" * 50, "a.md", 0, 0, 50),
+        TextChunk("b" * 50, "a.md", 1, 50, 100),
+    ]
+    merged, stats = semantic_merge_chunks(
+        chunks,
+        similarity_threshold=0.9,
+        min_chunk_chars=80,
+        max_chunk_chars=500,
+        similarity_backend="embedding",
+        embedder=_FakeEmbedUniform(),
+    )
+    assert len(merged) == 1
+    assert stats["merge_hits"] >= 1
+
+
+def test_semantic_merge_chunks_embedding_skips_when_orthogonal() -> None:
+    chunks = [
+        TextChunk("a" * 50, "a.md", 0, 0, 50),
+        TextChunk("b" * 50, "a.md", 1, 50, 100),
+    ]
+    merged, stats = semantic_merge_chunks(
+        chunks,
+        similarity_threshold=0.1,
+        min_chunk_chars=80,
+        max_chunk_chars=500,
+        similarity_backend="embedding",
+        embedder=_FakeEmbedOrthogonal(),
+    )
+    assert len(merged) == 2
+    assert stats["merge_hits"] == 0
+
+
+def test_semantic_merge_embedding_requires_embedder() -> None:
+    with pytest.raises(ValueError, match="embedder"):
+        semantic_merge_chunks(
+            [TextChunk("x", "a.md", 0, 0, 1)],
+            similarity_threshold=0.5,
+            min_chunk_chars=1,
+            max_chunk_chars=100,
+            similarity_backend="embedding",
+            embedder=None,
+        )
+
+
+def test_iter_chunks_for_text_semantic_merge_embedding_requires_backend() -> None:
+    with pytest.raises(ValueError, match="embedding_backend"):
+        list(
+            iter_chunks_for_text(
+                "abc",
+                source_file="a.md",
+                source_path="a.md",
+                chunk_size=2,
+                chunk_overlap=0,
+                semantic_merge_enabled=True,
+                semantic_merge_similarity="embedding",
+                embedding_backend=None,
+            )
+        )
+
+
 def test_iter_chunks_for_text_semantic_merge_enabled() -> None:
     text = "合同纠纷的诉讼时效为三年。合同纠纷的诉讼时效通常是三年。"
     chunks = list(
