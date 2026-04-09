@@ -254,6 +254,37 @@
       color: var(--text-muted);
     }
 
+    .input-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      margin-top: 0.35rem;
+      margin-bottom: 0.15rem;
+    }
+
+    .btn-random {
+      padding: 0.4rem 0.9rem;
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-sm);
+      background: var(--bg-input);
+      color: var(--text-secondary);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: border-color var(--transition), color var(--transition), background var(--transition);
+    }
+
+    .btn-random:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-light);
+    }
+
+    .btn-random:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
     /* Controls */
     .controls {
       display: flex;
@@ -863,6 +894,9 @@
         <textarea id="q" placeholder="输入你的法律相关问题，例如：民法典中关于合同效力的规定有哪些？"></textarea>
         <div class="input-hint">支持多行输入</div>
       </div>
+      <div class="input-toolbar">
+        <button type="button" id="randomQ" class="btn-random" title="从 settings/default/random_query.txt 随机抽取">生成随机问题</button>
+      </div>
       <div class="controls">
         <div class="control-group">
           <label for="k">检索数量 k</label>
@@ -1001,6 +1035,7 @@
         if (!res.ok) throw new Error('Failed to load models');
         modelData = await res.json();
         populateProviders();
+        applyModelDefaults();
       } catch (e) {
         console.warn('Failed to load model list:', e);
         // 下拉加载失败时不影响提问：回退服务端默认模型（不传 model 字段）
@@ -1039,6 +1074,29 @@
       modelSelect.disabled = false;
     }
 
+    /** 与 /api/models 返回的 defaults 对齐（来自 .env 的 MODEL_NAME）；无法命中白名单时仍展示配置名。 */
+    function applyModelDefaults() {
+      const d = modelData && modelData.defaults;
+      if (!d || !d.defaultProvider) return;
+      const prov = d.defaultProvider;
+      if (!modelData.rankedModels || !modelData.rankedModels[prov]) return;
+      providerSelect.value = prov;
+      populateModels(prov);
+      const want = d.defaultModel;
+      if (want == null || String(want).trim() === '') return;
+      const wantStr = String(want);
+      const values = Array.from(modelSelect.options).map((o) => o.value);
+      if (values.includes(wantStr)) {
+        modelSelect.value = wantStr;
+        return;
+      }
+      const opt = document.createElement('option');
+      opt.value = wantStr;
+      opt.textContent = wantStr + '（.env，不在下拉白名单时服务端仍可能使用该名）';
+      modelSelect.insertBefore(opt, modelSelect.options[1] || null);
+      modelSelect.value = wantStr;
+    }
+
     providerSelect.addEventListener('change', (e) => {
       populateModels(e.target.value);
     });
@@ -1063,6 +1121,33 @@
     const errEl = $("err");
     const metricsCard = $("metricsCard");
     const hitCountEl = $("hitCount");
+
+    $("randomQ").addEventListener("click", async () => {
+      errEl.textContent = "";
+      errEl.classList.remove("show");
+      try {
+        const res = await fetch("/api/random-query");
+        if (!res.ok) {
+          let detail = res.statusText;
+          try {
+            const j = await res.json();
+            if (j.detail) {
+              detail =
+                typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
+            }
+          } catch (_) {}
+          throw new Error(detail);
+        }
+        const data = await res.json();
+        if (data.query) {
+          $("q").value = data.query;
+          $("q").focus();
+        }
+      } catch (e) {
+        errEl.textContent = "随机问题加载失败: " + String(e.message || e);
+        errEl.classList.add("show");
+      }
+    });
 
     let streamAbortController = null;
 

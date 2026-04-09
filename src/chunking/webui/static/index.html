@@ -38,20 +38,71 @@
           句边界对齐（。！？；与换行，±30 字内取最小位移；见 doc/chunk/句边界对齐切分.md）
         </label>
 
+        <label class="check">
+          <input id="compare_semantic" type="checkbox" />
+          语义合并对比（并排展示：仅句边界切分 vs 句边界 + 语义合并；未勾选句边界时则为「滑窗 vs 滑窗+语义」）
+        </label>
+
+        <div class="row semantic-params" id="semantic_params_row">
+          <div>
+            <label for="semantic_merge_threshold">语义合并 threshold（0–1，空则读服务器配置）</label>
+            <input
+              id="semantic_merge_threshold"
+              type="number"
+              step="0.01"
+              min="0"
+              max="1"
+              placeholder="默认 0.82"
+            />
+          </div>
+          <div>
+            <label for="semantic_merge_min_chars">min_chars（空则读服务器配置）</label>
+            <input id="semantic_merge_min_chars" type="number" min="1" placeholder="默认 220" />
+          </div>
+          <div>
+            <label for="semantic_merge_max_chars">max_chars（空则读服务器配置）</label>
+            <input id="semantic_merge_max_chars" type="number" min="1" placeholder="默认 2200" />
+          </div>
+        </div>
+
         <button type="button" id="btn" class="btn">切分</button>
         <p id="err" class="error" hidden></p>
       </section>
 
       <section class="panel results" id="results" hidden>
-        <h2>汇总</h2>
-        <pre id="summary" class="pre"></pre>
+        <div id="results_single">
+          <h2>汇总</h2>
+          <pre id="summary" class="pre"></pre>
 
-        <h2>分段展示</h2>
-        <p class="muted chunk-hint">
-          「与上一块/下一块重叠」表示相邻块在原文中<strong>重合</strong>的字符数（滑窗重叠），不是本块长度；本块长度见每段标题中的「本块 N 字」。
-        </p>
-        <p id="omit" class="omit muted"></p>
-        <div id="chunks"></div>
+          <h2>分段展示</h2>
+          <p class="muted chunk-hint">
+            「与上一块/下一块重叠」表示相邻块在原文中<strong>重合</strong>的字符数（滑窗重叠），不是本块长度；本块长度见每段标题中的「本块 N 字」。
+          </p>
+          <p id="omit" class="omit muted"></p>
+          <div id="chunks"></div>
+        </div>
+
+        <div id="results_compare" hidden>
+          <p class="muted chunk-hint">
+            左：无语义合并；右：在左侧切分结果上做相邻块语义合并（2-gram 余弦相似度）。参数见各列汇总。
+          </p>
+          <div class="compare-grid">
+            <div class="compare-col">
+              <h2 class="compare-title">句边界 / 滑窗（无语义合并）</h2>
+              <pre id="summary_b" class="pre"></pre>
+              <h3 class="compare-sub">分段展示</h3>
+              <p id="omit_b" class="omit muted"></p>
+              <div id="chunks_b"></div>
+            </div>
+            <div class="compare-col">
+              <h2 class="compare-title">+ 语义合并</h2>
+              <pre id="summary_s" class="pre"></pre>
+              <h3 class="compare-sub">分段展示</h3>
+              <p id="omit_s" class="omit muted"></p>
+              <div id="chunks_s"></div>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
 

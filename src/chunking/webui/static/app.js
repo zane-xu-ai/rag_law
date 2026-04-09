@@ -14,7 +14,26 @@
     el.hidden = !msg;
   }
 
-  function renderSummary(s) {
+  function parseOptionalFloat(id) {
+    const v = $(id).value.trim();
+    if (!v) return null;
+    const n = parseFloat(v);
+    return Number.isNaN(n) ? null : n;
+  }
+
+  function parseOptionalInt(id) {
+    const v = $(id).value.trim();
+    if (!v) return null;
+    const n = parseInt(v, 10);
+    return Number.isNaN(n) ? null : n;
+  }
+
+  function syncSemanticParamsRow() {
+    const on = $("compare_semantic").checked;
+    $("semantic_params_row").classList.toggle("disabled", !on);
+  }
+
+  function renderSummary(s, summaryPreId) {
     const lines = [
       `总字符数: ${s.total_chars}`,
       `块数: ${s.chunk_count}`,
@@ -36,6 +55,13 @@
       );
     }
     lines.push(
+      `semantic_merge_enabled: ${s.semantic_merge_enabled}`,
+      `semantic_merge_threshold / min_chars / max_chars: ${s.semantic_merge_threshold} / ${s.semantic_merge_min_chars} / ${s.semantic_merge_max_chars}`
+    );
+    if (s.semantic_merge_note) {
+      lines.push("", "语义合并说明:", s.semantic_merge_note);
+    }
+    lines.push(
       "",
       "每段字符数: " + JSON.stringify(s.chars_per_chunk),
       "每段字符数 min/max/avg: " + JSON.stringify(s.chars_per_chunk_stats),
@@ -46,7 +72,7 @@
     if (s.boundary_length_note) {
       lines.push("", "说明:", s.boundary_length_note);
     }
-    $("summary").textContent = lines.join("\n");
+    $(summaryPreId).textContent = lines.join("\n");
   }
 
   function escapeHtml(s) {
@@ -77,10 +103,10 @@
     return html;
   }
 
-  function renderChunks(display, summary) {
-    const wrap = $("chunks");
+  function renderChunks(display, summary, chunksWrapId, omitId) {
+    const wrap = $(chunksWrapId);
     wrap.innerHTML = "";
-    const omit = $("omit");
+    const omit = $(omitId);
     omit.textContent = display.omitted_message || "";
     const overlaps = summary.overlap_between_adjacent || [];
     const n = summary.chunk_count;
@@ -148,6 +174,22 @@
     const ta = $("text").value;
     const fileInput = $("file").files && $("file").files[0];
     const boundary_aware = $("boundary_aware").checked;
+    const compare_semantic = $("compare_semantic").checked;
+
+    const semThr = parseOptionalFloat("semantic_merge_threshold");
+    const semMin = parseOptionalInt("semantic_merge_min_chars");
+    const semMax = parseOptionalInt("semantic_merge_max_chars");
+
+    const jsonPayload = {
+      text: ta,
+      chunk_size,
+      chunk_overlap,
+      boundary_aware,
+      compare_semantic,
+      semantic_merge_threshold: semThr,
+      semantic_merge_min_chars: semMin,
+      semantic_merge_max_chars: semMax,
+    };
 
     let res;
     try {
@@ -160,17 +202,18 @@
         if (boundary_aware) {
           fd.append("boundary_aware", "true");
         }
+        if (compare_semantic) {
+          fd.append("compare_semantic", "true");
+        }
+        if (semThr != null) fd.append("semantic_merge_threshold", String(semThr));
+        if (semMin != null) fd.append("semantic_merge_min_chars", String(semMin));
+        if (semMax != null) fd.append("semantic_merge_max_chars", String(semMax));
         res = await fetch("/api/preview", { method: "POST", body: fd });
       } else {
         res = await fetch("/api/preview", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: ta,
-            chunk_size,
-            chunk_overlap,
-            boundary_aware,
-          }),
+          body: JSON.stringify(jsonPayload),
         });
       }
 
@@ -190,8 +233,24 @@
       }
 
       const data = await res.json();
-      renderSummary(data.summary);
-      renderChunks(data.display, data.summary);
+      const mode = data.mode || "single";
+
+      if (mode === "comparison") {
+        $("results_single").hidden = true;
+        $("results_compare").hidden = false;
+        const b = data.boundary;
+        const sm = data.semantic_merged;
+        renderSummary(b.summary, "summary_b");
+        renderChunks(b.display, b.summary, "chunks_b", "omit_b");
+        renderSummary(sm.summary, "summary_s");
+        renderChunks(sm.display, sm.summary, "chunks_s", "omit_s");
+      } else {
+        $("results_single").hidden = false;
+        $("results_compare").hidden = true;
+        renderSummary(data.summary, "summary");
+        renderChunks(data.display, data.summary, "chunks", "omit");
+      }
+
       $("results").hidden = false;
     } catch (e) {
       showError(String(e));
@@ -199,4 +258,6 @@
   }
 
   $("btn").addEventListener("click", run);
+  $("compare_semantic").addEventListener("change", syncSemanticParamsRow);
+  syncSemanticParamsRow();
 })();

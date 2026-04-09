@@ -150,3 +150,28 @@ def test_preview_wrong_content_type(client: TestClient) -> None:
         headers={"Content-Type": "text/plain"},
     )
     assert r.status_code == 415
+
+
+def test_preview_compare_semantic_returns_two_payloads(client: TestClient) -> None:
+    """对比模式：boundary 无语义合并，semantic_merged 启用合并。"""
+    r = client.post(
+        "/api/preview",
+        json={
+            "text": "a" * 50,
+            "chunk_size": 20,
+            "chunk_overlap": 0,
+            "boundary_aware": False,
+            "compare_semantic": True,
+            "semantic_merge_threshold": 0.0,
+            "semantic_merge_min_chars": 25,
+            "semantic_merge_max_chars": 2200,
+        },
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["mode"] == "comparison"
+    assert data["boundary"]["summary"]["semantic_merge_enabled"] is False
+    assert data["semantic_merged"]["summary"]["semantic_merge_enabled"] is True
+    assert data["boundary"]["summary"]["chunk_count"] == 3
+    assert data["semantic_merged"]["summary"]["chunk_count"] < 3
+    assert "semantic_merge_note" in data["semantic_merged"]["summary"]

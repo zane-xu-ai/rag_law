@@ -22,7 +22,7 @@ body {
 
 .header {
   padding: 1.5rem 1.75rem 0.5rem;
-  max-width: 960px;
+  max-width: 1120px;
   margin: 0 auto;
 }
 
@@ -46,7 +46,7 @@ code {
 }
 
 .layout {
-  max-width: 960px;
+  max-width: 1120px;
   margin: 0 auto;
   padding: 1rem 1.75rem 2.5rem;
   display: flex;
@@ -197,4 +197,44 @@ label.check input {
   font-size: 0.82rem;
   margin: 0 0 0.65rem;
   line-height: 1.45;
+}
+
+.semantic-params.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .compare-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.compare-col {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  background: #fdfcfa;
+}
+
+.compare-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  color: var(--accent);
+}
+
+.compare-sub {
+  font-size: 0.92rem;
+  font-weight: 600;
+  margin: 0.65rem 0 0.35rem;
+  color: var(--muted);
 }

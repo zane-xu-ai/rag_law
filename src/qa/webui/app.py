@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import importlib.util
+import random
 import sys
 import threading
 import time
@@ -21,9 +22,11 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from conf.settings import project_root
 from qa.streaming import format_sse_event, stream_qa_events
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
+_RANDOM_QUERY_FILE = project_root() / "settings" / "default" / "random_query.txt"
 
 
 def _openai_available() -> bool:
@@ -104,13 +107,73 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _load_random_query_pool() -> list[str]:
+    """从 ``settings/default/random_query.txt`` 读取问题池；忽略空行与 ``#`` 注释行。"""
+    if not _RANDOM_QUERY_FILE.is_file():
+        return []
+    raw = _RANDOM_QUERY_FILE.read_text(encoding="utf-8")
+    out: list[str] = []
+    for line in raw.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        out.append(s)
+    return out
+
+
+@app.get("/api/random-query")
+def api_random_query() -> dict[str, str]:
+    """返回问题池中随机一条，供 WebUI「生成随机问题」使用。"""
+    pool = _load_random_query_pool()
+    if not pool:
+        logger.warning("random query pool empty or missing: {}", _RANDOM_QUERY_FILE)
+        raise HTTPException(
+            status_code=404,
+            detail="随机问题池为空或文件不存在",
+        )
+    return {"query": random.choice(pool)}
+
+
 @app.get("/api/models")
 def get_model_config(request: Request) -> dict:
-    """返回可用模型配置（按供应商分组）；启动时加载到内存。"""
+    """返回可用模型配置（按供应商分组）；启动时加载到内存。
+
+    附加 ``defaults``：与 ``.env`` 中 ``MODEL_NAME`` 一致；``defaultProvider`` 为反查结果，无法判断时落在 Qwen 分组（如 ``Alibaba-Qwen``）。
+    """
     config = getattr(request.app.state, "model_config", {})
     if not config:
         raise HTTPException(status_code=404, detail="Model config not loaded")
-    return config
+    settings = getattr(request.app.state, "settings", None)
+    out = dict(config)
+    if settings is not None:
+        out["defaults"] = _resolve_qa_ui_defaults(config, settings)
+    return out
+
+
+def _resolve_qa_ui_defaults(model_config: dict[str, Any], settings: Any) -> dict[str, Any]:
+    """供 WebUI 下拉框预选：供应商由 MODEL_NAME 在 rankedModels 中反查；无法判断时落在 Qwen 分组。"""
+    ranked_raw = model_config.get("rankedModels")
+    ranked: dict[str, Any] = ranked_raw if isinstance(ranked_raw, dict) else {}
+    model_name = str(settings.model_name)
+    provider: str | None = None
+    for p, models in ranked.items():
+        if isinstance(models, list) and model_name in models:
+            provider = p
+            break
+    if provider is None:
+        if "Alibaba-Qwen" in ranked:
+            provider = "Alibaba-Qwen"
+        else:
+            for k in sorted(ranked.keys()):
+                if "qwen" in str(k).lower():
+                    provider = k
+                    break
+    if provider is None and ranked:
+        provider = next(iter(ranked.keys()))
+    return {
+        "defaultProvider": provider,
+        "defaultModel": model_name,
+    }
 
 
 def _is_model_allowed(model_name: str, model_config: dict[str, Any]) -> bool:

@@ -27,6 +27,26 @@ class PreviewJSONBody(BaseModel):
     chunk_size: int = Field(..., ge=1)
     chunk_overlap: int = Field(..., ge=0)
     boundary_aware: bool = False
+    compare_semantic: bool = Field(
+        default=False,
+        description="为 True 时返回句边界切分与句边界+语义合并两套结果，便于对比",
+    )
+    semantic_merge_threshold: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="语义合并相似度阈值；未传则使用服务器配置",
+    )
+    semantic_merge_min_chars: int | None = Field(
+        default=None,
+        ge=1,
+        description="语义合并最短块优先合并阈值；未传则使用服务器配置",
+    )
+    semantic_merge_max_chars: int | None = Field(
+        default=None,
+        ge=1,
+        description="语义合并后最大块长；未传则使用服务器配置",
+    )
 
 
 def _validate_overlap(size: int, overlap: int) -> None:
@@ -46,42 +66,56 @@ def _check_utf8_size(text: str) -> None:
         )
 
 
-def _run_preview(
+def _boundary_overlap_params(
+    chunk_size: int,
+    chunk_overlap: int,
+    boundary_aware: bool,
+) -> tuple[int | None, int | None, bool | None]:
+    """句边界模式下的重叠夹紧区间（与 split.iter_chunks_for_text / analyze 脚本一致）。"""
+    if not boundary_aware:
+        return None, None, None
+    st = get_settings()
+    req = chunk_overlap
+    cap = chunk_size - 1  # boundary 要求 overlap_ceiling < chunk_size
+    base_floor = (
+        st.chunk_overlap_min if st.chunk_overlap_min is not None else req
+    )
+    overlap_floor = min(req, base_floor)
+    if st.chunk_overlap_max is not None:
+        overlap_ceiling = min(cap, st.chunk_overlap_max)
+    else:
+        overlap_ceiling = min(cap, req)
+    rigid_overlap = overlap_floor == overlap_ceiling
+    boundary_priority_overlap = rigid_overlap or st.chunk_boundary_priority_overlap
+    return overlap_floor, overlap_ceiling, boundary_priority_overlap
+
+
+def _resolve_semantic_merge_nums(
+    threshold: float | None,
+    min_chars: int | None,
+    max_chars: int | None,
+) -> tuple[float, int, int]:
+    st = get_settings()
+    t = st.chunk_semantic_merge_threshold if threshold is None else threshold
+    lo = st.chunk_semantic_merge_min_chars if min_chars is None else min_chars
+    hi = st.chunk_semantic_merge_max_chars if max_chars is None else max_chars
+    return t, lo, hi
+
+
+def _build_preview_payload(
     text: str,
     chunk_size: int,
     chunk_overlap: int,
     *,
-    boundary_aware: bool = False,
+    boundary_aware: bool,
+    semantic_merge_enabled: bool,
+    semantic_merge_threshold: float,
+    semantic_merge_min_chars: int,
+    semantic_merge_max_chars: int,
 ) -> dict:
-    if chunk_size < 1:
-        raise HTTPException(status_code=422, detail="chunk_size 至少为 1")
-    _validate_overlap(chunk_size, chunk_overlap)
-    _check_utf8_size(text)
-
-    # 句边界模式下的重叠夹紧区间 [overlap_floor, overlap_ceiling]（与 split.iter_chunks_for_text / analyze 脚本一致）：
-    # - overlap_floor 不得超过本次请求的 chunk_overlap（boundary 校验）；
-    # - overlap_ceiling 可大于 chunk_overlap（例如 overlap=50 且 ceiling=160），但须 < chunk_size。
-    # 旧实现曾用 min(本次请求, st.chunk_overlap_floor) 且误用全局 CHUNK_OVERLAP 压扁表单目标重叠，已改为
-    # 未配置 MIN/MAX 时以本次请求为准（见 iter_chunks_for_text 与 analyze 脚本）。
-    overlap_floor = None
-    overlap_ceiling = None
-    boundary_priority_overlap: bool | None = None
-    if boundary_aware:
-        st = get_settings()
-        req = chunk_overlap
-        cap = chunk_size - 1  # boundary 要求 overlap_ceiling < chunk_size
-        base_floor = (
-            st.chunk_overlap_min if st.chunk_overlap_min is not None else req
-        )
-        overlap_floor = min(req, base_floor)
-        if st.chunk_overlap_max is not None:
-            overlap_ceiling = min(cap, st.chunk_overlap_max)
-        else:
-            overlap_ceiling = min(cap, req)
-        # 当重叠上下界相等时，重叠长度被「钉死」，默认会压过句界；预览优先可读性：句界优先于重叠区间
-        # （与 CHUNK_BOUNDARY_PRIORITY_OVERLAP 为真时一致，或与 rigid 时自动开启叠加）
-        rigid_overlap = overlap_floor == overlap_ceiling
-        boundary_priority_overlap = rigid_overlap or st.chunk_boundary_priority_overlap
+    overlap_floor, overlap_ceiling, boundary_priority_overlap = _boundary_overlap_params(
+        chunk_size, chunk_overlap, boundary_aware
+    )
     chunks: list[TextChunk] = list(
         iter_chunks_for_text(
             text,
@@ -93,6 +127,10 @@ def _run_preview(
             overlap_floor=overlap_floor,
             overlap_ceiling=overlap_ceiling,
             boundary_priority_overlap=boundary_priority_overlap,
+            semantic_merge_enabled=semantic_merge_enabled,
+            semantic_merge_threshold=semantic_merge_threshold,
+            semantic_merge_min_chars=semantic_merge_min_chars,
+            semantic_merge_max_chars=semantic_merge_max_chars,
         )
     )
     n = len(chunks)
@@ -127,6 +165,16 @@ def _run_preview(
             "重叠区间还会夹紧起点，二者都常使块变短。"
             "理论上单块最长约 chunk_size+2*max_probe（首尾同时向外对齐），实践中罕见；"
             "末块不足 chunk_size 也属正常。"
+        )
+
+    summary["semantic_merge_enabled"] = semantic_merge_enabled
+    summary["semantic_merge_threshold"] = semantic_merge_threshold
+    summary["semantic_merge_min_chars"] = semantic_merge_min_chars
+    summary["semantic_merge_max_chars"] = semantic_merge_max_chars
+    if semantic_merge_enabled:
+        summary["semantic_merge_note"] = (
+            "语义合并：在句边界（或滑窗）切分结果上，对相邻块用字符 2-gram 余弦相似度判断；"
+            "当上一块长度 < min_chars、合并后长度 ≤ max_chars 且相似度 ≥ threshold 时合并为一块。"
         )
 
     if n == 0:
@@ -172,6 +220,72 @@ def _run_preview(
     return {"summary": summary, "display": display}
 
 
+def _run_preview(
+    text: str,
+    chunk_size: int,
+    chunk_overlap: int,
+    *,
+    boundary_aware: bool = False,
+    compare_semantic: bool = False,
+    semantic_merge_threshold: float | None = None,
+    semantic_merge_min_chars: int | None = None,
+    semantic_merge_max_chars: int | None = None,
+) -> dict:
+    if chunk_size < 1:
+        raise HTTPException(status_code=422, detail="chunk_size 至少为 1")
+    _validate_overlap(chunk_size, chunk_overlap)
+    _check_utf8_size(text)
+
+    st_thr, st_min, st_max = _resolve_semantic_merge_nums(
+        semantic_merge_threshold,
+        semantic_merge_min_chars,
+        semantic_merge_max_chars,
+    )
+
+    if compare_semantic:
+        boundary_payload = _build_preview_payload(
+            text,
+            chunk_size,
+            chunk_overlap,
+            boundary_aware=boundary_aware,
+            semantic_merge_enabled=False,
+            semantic_merge_threshold=st_thr,
+            semantic_merge_min_chars=st_min,
+            semantic_merge_max_chars=st_max,
+        )
+        merged_payload = _build_preview_payload(
+            text,
+            chunk_size,
+            chunk_overlap,
+            boundary_aware=boundary_aware,
+            semantic_merge_enabled=True,
+            semantic_merge_threshold=st_thr,
+            semantic_merge_min_chars=st_min,
+            semantic_merge_max_chars=st_max,
+        )
+        return {
+            "mode": "comparison",
+            "boundary": boundary_payload,
+            "semantic_merged": merged_payload,
+        }
+
+    single = _build_preview_payload(
+        text,
+        chunk_size,
+        chunk_overlap,
+        boundary_aware=boundary_aware,
+        semantic_merge_enabled=False,
+        semantic_merge_threshold=st_thr,
+        semantic_merge_min_chars=st_min,
+        semantic_merge_max_chars=st_max,
+    )
+    return {
+        "mode": "single",
+        "summary": single["summary"],
+        "display": single["display"],
+    }
+
+
 app = FastAPI(title="rag-law chunk preview", version="0.1.0")
 
 
@@ -188,6 +302,10 @@ async def api_preview(request: Request) -> JSONResponse:
                 body.chunk_size,
                 body.chunk_overlap,
                 boundary_aware=body.boundary_aware,
+                compare_semantic=body.compare_semantic,
+                semantic_merge_threshold=body.semantic_merge_threshold,
+                semantic_merge_min_chars=body.semantic_merge_min_chars,
+                semantic_merge_max_chars=body.semantic_merge_max_chars,
             )
         )
 
@@ -218,12 +336,43 @@ async def api_preview(request: Request) -> JSONResponse:
             raise HTTPException(status_code=422, detail="chunk_size / chunk_overlap 须为整数") from e
         ba_raw = form.get("boundary_aware")
         boundary_aware = ba_raw in ("true", "1", "on", True)
+        cs_raw = form.get("compare_semantic")
+        compare_semantic = cs_raw in ("true", "1", "on", True)
+
+        def _opt_float(key: str) -> float | None:
+            v = form.get(key)
+            if v is None or v == "":
+                return None
+            try:
+                return float(v)
+            except (TypeError, ValueError) as e:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"{key} 须为数字",
+                ) from e
+
+        def _opt_int(key: str) -> int | None:
+            v = form.get(key)
+            if v is None or v == "":
+                return None
+            try:
+                return int(v)
+            except (TypeError, ValueError) as e:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"{key} 须为整数",
+                ) from e
+
         return JSONResponse(
             _run_preview(
                 text,
                 chunk_size,
                 chunk_overlap,
                 boundary_aware=boundary_aware,
+                compare_semantic=compare_semantic,
+                semantic_merge_threshold=_opt_float("semantic_merge_threshold"),
+                semantic_merge_min_chars=_opt_int("semantic_merge_min_chars"),
+                semantic_merge_max_chars=_opt_int("semantic_merge_max_chars"),
             )
         )
 

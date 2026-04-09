@@ -103,6 +103,15 @@ def test_qa_stream_returns_sse_lines(client: TestClient) -> None:
                 assert obj["type"] == "start"
 
 
+def test_random_query(client: TestClient) -> None:
+    """从 settings/default/random_query.txt 随机返回一条。"""
+    r = client.get("/api/random-query")
+    assert r.status_code == 200
+    data = r.json()
+    assert "query" in data
+    assert len(data["query"].strip()) >= 8
+
+
 def test_models_list(client: TestClient) -> None:
     """验证 /api/models 返回内存中的模型配置。"""
     r = client.get("/api/models")
@@ -112,6 +121,9 @@ def test_models_list(client: TestClient) -> None:
     providers = list(data["rankedModels"].keys())
     assert len(providers) > 0
     assert "Alibaba-Qwen" in providers
+    assert "defaults" in data
+    assert data["defaults"]["defaultModel"] == "qwen-test"
+    assert data["defaults"]["defaultProvider"] == "Alibaba-Qwen"
 
 
 def test_qa_stream_backend_exception_returns_error_event(client: TestClient) -> None:
