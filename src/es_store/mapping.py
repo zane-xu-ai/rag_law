@@ -29,6 +29,8 @@ def chunk_index_mappings(dims: int) -> dict[str, Any]:
             "domain": {"type": "keyword"},
             "source_doc_id": {"type": "keyword"},
             "source_sha256": {"type": "keyword"},
+            "source_oss_url": {"type": "keyword", "ignore_above": 4096},
+            "chunk_version": {"type": "keyword"},
             "page_start": {"type": "integer"},
             "page_end": {"type": "integer"},
             "extra": {"type": "flattened"},

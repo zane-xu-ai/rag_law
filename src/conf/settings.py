@@ -60,10 +60,40 @@ class Settings(BaseSettings):
     # --- Elasticsearch ---
     es_host: str = Field(default="localhost", validation_alias="ES_HOST")
     es_port: int = Field(default=9200, validation_alias="ES_PORT")
-    es_index: str = Field(default="rag_law_doc_chunks", validation_alias="ES_INDEX")
+    es_index: str = Field(default="rag_law_chunks", validation_alias="ES_INDEX")
     es_user: Optional[str] = Field(default=None, validation_alias="ES_USER")
     es_password: Optional[str] = Field(default=None, validation_alias="ES_PASSWORD")
     es_use_ssl: bool = Field(default=False, validation_alias="ES_USE_SSL")
+    chunk_version: str = Field(
+        default="",
+        validation_alias="CHUNK_VERSION",
+        description="写入 ES 每条 chunk 的版本标签（如 1.1.7）；空字符串则不写入该字段（由默认值处理）",
+    )
+
+    # --- 阿里云 OSS（凭证仍为 OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET；与 ingest_oss / c06 一致）---
+    oss_region: str = Field(default="", validation_alias="OSS_REGION")
+    oss_endpoint: Optional[str] = Field(default=None, validation_alias="OSS_ENDPOINT")
+    oss_bucket: str = Field(default="rag-law", validation_alias="OSS_BUCKET")
+    oss_object_prefix: str = Field(default="md3/", validation_alias="OSS_OBJECT_PREFIX")
+    oss_download_dir: str = Field(
+        default="data/md_minerU",
+        validation_alias="OSS_DOWNLOAD_DIR",
+        description="OSS 下载目录（相对项目根，或绝对路径）",
+    )
+
+    @field_validator("oss_object_prefix", mode="after")
+    @classmethod
+    def normalize_oss_object_prefix(cls, v: str) -> str:
+        s = (v or "").strip()
+        if not s:
+            return "md3/"
+        return s if s.endswith("/") else s + "/"
+
+    @field_validator("oss_download_dir", mode="after")
+    @classmethod
+    def strip_oss_download_dir(cls, v: str) -> str:
+        t = (v or "").strip()
+        return t if t else "data/md_minerU"
 
     # --- 切分与检索 ---
     chunk_size: int = Field(

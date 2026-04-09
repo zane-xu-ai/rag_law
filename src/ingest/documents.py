@@ -16,6 +16,8 @@ def chunk_embedding_to_source(
     embedding: list[float],
     *,
     source_sha256: str = "",
+    source_oss_url: str = "",
+    chunk_version: str = "",
 ) -> dict[str, Any]:
     """单条 chunk → 待索引文档 dict；不调用 ES。
 
@@ -37,6 +39,10 @@ def chunk_embedding_to_source(
     }
     if source_sha256:
         row["source_sha256"] = source_sha256
+    if source_oss_url:
+        row["source_oss_url"] = source_oss_url
+    if chunk_version:
+        row["chunk_version"] = chunk_version
     if chunk.extra:
         row["extra"] = chunk.extra
     return apply_chunk_source_defaults(row)

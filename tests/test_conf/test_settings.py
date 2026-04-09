@@ -149,3 +149,9 @@ def test_settings_direct_instantiation(monkeypatch: pytest.MonkeyPatch) -> None:
     _base_env(monkeypatch, EMBEDDING_BATCH_SIZE="16")
     s = Settings()
     assert s.embedding_batch_size == 16
+
+
+def test_oss_object_prefix_normalized(monkeypatch: pytest.MonkeyPatch) -> None:
+    _base_env(monkeypatch, OSS_OBJECT_PREFIX="md3")
+    get_settings.cache_clear()
+    assert get_settings().oss_object_prefix == "md3/"

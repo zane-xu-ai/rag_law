@@ -25,6 +25,8 @@ def test_chunk_embedding_to_source_shape() -> None:
     assert d["mime_type"] == "text/markdown"
     assert d["source_doc_id"] == "data/a.md"
     assert d["source_sha256"] == "abc" * 10 + "ab"
+    assert d["source_oss_url"] == ""
+    assert d["chunk_version"] == ""
 
 
 def test_chunk_embedding_to_source_empty_sha_gets_default() -> None:
@@ -37,6 +39,37 @@ def test_chunk_embedding_to_source_empty_sha_gets_default() -> None:
     )
     d = chunk_embedding_to_source(c, [1.0])
     assert d["source_sha256"] == ""
+    assert d["source_oss_url"] == ""
+    assert d["chunk_version"] == ""
+
+
+def test_chunk_embedding_to_source_oss_url() -> None:
+    c = TextChunk(
+        text="x",
+        source_file="f.md",
+        chunk_index=0,
+        char_start=0,
+        char_end=1,
+        source_path="data/md_minerU/f.md",
+    )
+    d = chunk_embedding_to_source(
+        c,
+        [1.0],
+        source_oss_url="https://md3.oss-cn-beijing.aliyuncs.com/a/b.md",
+    )
+    assert d["source_oss_url"] == "https://md3.oss-cn-beijing.aliyuncs.com/a/b.md"
+
+
+def test_chunk_embedding_to_source_chunk_version() -> None:
+    c = TextChunk(
+        text="v",
+        source_file="v.md",
+        chunk_index=0,
+        char_start=0,
+        char_end=1,
+    )
+    d = chunk_embedding_to_source(c, [0.1], chunk_version="1.1.7")
+    assert d["chunk_version"] == "1.1.7"
 
 
 def test_sha256_utf8_file(tmp_path) -> None:

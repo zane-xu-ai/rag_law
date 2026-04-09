@@ -31,4 +31,8 @@ def apply_chunk_source_defaults(doc: dict[str, Any]) -> dict[str, Any]:
         out["source_doc_id"] = ""
     if "source_sha256" not in out:
         out["source_sha256"] = ""
+    if "source_oss_url" not in out:
+        out["source_oss_url"] = ""
+    if "chunk_version" not in out:
+        out["chunk_version"] = ""
     return out

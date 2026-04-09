@@ -37,6 +37,8 @@ def test_apply_chunk_source_defaults() -> None:
     assert d["source_path"] == ""
     assert d["source_doc_id"] == ""
     assert d["source_sha256"] == ""
+    assert d["source_oss_url"] == ""
+    assert d["chunk_version"] == ""
 
 
 def test_apply_chunk_source_defaults_preserves_explicit() -> None:

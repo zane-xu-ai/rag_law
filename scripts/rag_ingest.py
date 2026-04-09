@@ -168,7 +168,12 @@ def main() -> int:
 
     print("4) bulk 写入 …")
     docs = [
-        chunk_embedding_to_source(c, emb, source_sha256=sha)
+        chunk_embedding_to_source(
+            c,
+            emb,
+            source_sha256=sha,
+            chunk_version=settings.chunk_version,
+        )
         for c, emb, sha in zip(chunks, embeddings, shas)
     ]
     ok_n, errs = store.bulk_index_chunks(docs)

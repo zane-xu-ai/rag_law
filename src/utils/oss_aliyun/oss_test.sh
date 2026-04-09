@@ -1,0 +1,1 @@
+PYTHONPATH=src uv run python -m utils.oss_aliyun.cli verify --bucket rag-law --prefix md3/
