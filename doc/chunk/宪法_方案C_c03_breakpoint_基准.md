@@ -16,7 +16,7 @@
 
 ## 3. 与方案 D 对比
 
-在相同源文 `fixtures/宪法.md` 上运行方案 D 分段后，将 D 的块区间与 `宪法_c03_breakpoint_golden.json` 中的方案 C 区间对比（块数、平均块长、条款锚点是否被切断等）。评测清单见 [v1.1.7-scheme-d-eval.md](../plan/v1.1.7-scheme-d-eval.md)。
+在相同源文 `fixtures/宪法.md` 上运行方案 D 分段后，将 D 的块区间与 `宪法_c03_breakpoint_golden.json` 中的方案 C 区间对比（块数、平均块长、条款锚点是否被切断等）。评测清单见 [v1.1.8-scheme-d-eval.md](../plan/v1.1.8-scheme-d-eval.md)；方案 D 实施见 [v1.1.9-scheme-d-concrete.md](../plan/v1.1.9-scheme-d-concrete.md)。
 
 ## 4. 与旧「1500/100 句边界 golden」的关系
 
