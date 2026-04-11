@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from chunking.env_overlap import effective_boundary_overlap_params
 from chunking.split import TextChunk, iter_chunks_for_text
 from conf.settings import get_settings
 from chunking.webui.preview_logic import (
@@ -71,23 +72,12 @@ def _boundary_overlap_params(
     chunk_overlap: int,
     boundary_aware: bool,
 ) -> tuple[int | None, int | None, bool | None]:
-    """句边界模式下的重叠夹紧区间（与 split.iter_chunks_for_text / analyze 脚本一致）。"""
+    """句边界模式下的重叠夹紧区间（与 ingest / split 使用 ``effective_boundary_overlap_params`` 一致）。"""
     if not boundary_aware:
         return None, None, None
     st = get_settings()
-    req = chunk_overlap
-    cap = chunk_size - 1  # boundary 要求 overlap_ceiling < chunk_size
-    base_floor = (
-        st.chunk_overlap_min if st.chunk_overlap_min is not None else req
-    )
-    overlap_floor = min(req, base_floor)
-    if st.chunk_overlap_max is not None:
-        overlap_ceiling = min(cap, st.chunk_overlap_max)
-    else:
-        overlap_ceiling = min(cap, req)
-    rigid_overlap = overlap_floor == overlap_ceiling
-    boundary_priority_overlap = rigid_overlap or st.chunk_boundary_priority_overlap
-    return overlap_floor, overlap_ceiling, boundary_priority_overlap
+    f, c, b = effective_boundary_overlap_params(chunk_size, chunk_overlap, st)
+    return f, c, b
 
 
 def _resolve_semantic_merge_nums(

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional, cast
 
-from chunking.split import TextChunk, iter_file_chunks
+from chunking.env_overlap import effective_boundary_overlap_params
+from chunking.split import TextChunk, iter_chunks_for_text, iter_file_chunks
 from conf.settings import get_settings, project_root
 from embeddings.base import EmbeddingBackend
 
@@ -67,14 +68,21 @@ def _resolve_chunking_params(
     if boundary_aware:
         if s is None:
             s = get_settings()
-        if overlap_floor is None:
-            overlap_floor = s.chunk_overlap_floor
-        if overlap_ceiling is None:
-            overlap_ceiling = s.chunk_overlap_ceiling
+        if overlap_floor is None and overlap_ceiling is None:
+            overlap_floor, overlap_ceiling, computed_bpo = effective_boundary_overlap_params(
+                chunk_size, chunk_overlap, s
+            )
+            if eff_bpo is None:
+                eff_bpo = computed_bpo
+        else:
+            if overlap_floor is None:
+                overlap_floor = s.chunk_overlap_floor
+            if overlap_ceiling is None:
+                overlap_ceiling = s.chunk_overlap_ceiling
+            if eff_bpo is None:
+                eff_bpo = s.chunk_boundary_priority_overlap
         if eff_mb is None:
             eff_mb = s.chunk_boundary_max_scan
-        if eff_bpo is None:
-            eff_bpo = s.chunk_boundary_priority_overlap
         if eff_car is None:
             eff_car = s.chunk_boundary_clamp_adjust_max_rounds
 
@@ -94,6 +102,75 @@ def _resolve_chunking_params(
         eff_sem_min,
         eff_sem_max,
         eff_sem_sim,
+    )
+
+
+def iter_chunks_in_memory_like_ingest(
+    full_text: str,
+    *,
+    source_file: str,
+    source_path: Optional[str],
+    embedding_backend: EmbeddingBackend | None = None,
+) -> Iterator[TextChunk]:
+    """与 `load_chunks_with_sha256` / 入库脚本相同的 `.env` 解析，对内存中的整段文本切分。
+
+    含：`CHUNK_SIZE` / `CHUNK_OVERLAP`、`CHUNK_BOUNDARY_AWARE`（句边界与重叠夹紧）、
+    `CHUNK_SEMANTIC_MERGE_*`（若启用 embedding 相似度须传入 ``embedding_backend``）。
+    """
+    st = get_settings()
+    (
+        chunk_size,
+        chunk_overlap,
+        _root,
+        boundary_aware,
+        overlap_floor,
+        overlap_ceiling,
+        eff_mb,
+        eff_bpo,
+        eff_car,
+        eff_sem_enabled,
+        eff_sem_th,
+        eff_sem_min,
+        eff_sem_max,
+        eff_sem_sim,
+    ) = _resolve_chunking_params(
+        chunk_size=None,
+        chunk_overlap=None,
+        root=None,
+        boundary_aware=st.chunk_boundary_aware,
+        overlap_floor=None,
+        overlap_ceiling=None,
+        max_boundary_scan=None,
+        boundary_priority_overlap=None,
+        clamp_adjust_max_rounds=None,
+        semantic_merge_enabled=st.chunk_semantic_merge_enabled,
+        semantic_merge_threshold=st.chunk_semantic_merge_threshold,
+        semantic_merge_min_chars=st.chunk_semantic_merge_min_chars,
+        semantic_merge_max_chars=st.chunk_semantic_merge_max_chars,
+        semantic_merge_similarity=st.chunk_semantic_merge_similarity,
+    )
+    sim: Literal["char_ngram", "embedding"] = cast(
+        Literal["char_ngram", "embedding"],
+        eff_sem_sim,
+    )
+    yield from iter_chunks_for_text(
+        full_text,
+        source_file=source_file,
+        source_path=source_path,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        boundary_aware=boundary_aware,
+        overlap_floor=overlap_floor,
+        overlap_ceiling=overlap_ceiling,
+        max_boundary_scan=eff_mb,
+        boundary_priority_overlap=eff_bpo,
+        clamp_adjust_max_rounds=eff_car,
+        semantic_merge_enabled=eff_sem_enabled,
+        semantic_merge_similarity=sim,
+        embedding_backend=embedding_backend,
+        semantic_merge_threshold=eff_sem_th,
+        semantic_merge_min_chars=eff_sem_min,
+        semantic_merge_max_chars=eff_sem_max,
     )
 
 

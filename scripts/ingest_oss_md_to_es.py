@@ -82,7 +82,7 @@ def main() -> int:
     parser.add_argument(
         "--boundary-aware",
         action="store_true",
-        help="句边界对齐切分（默认关闭）",
+        help="句边界对齐切分；未指定时采用 .env 的 CHUNK_BOUNDARY_AWARE",
     )
     parser.add_argument(
         "--dry-run",
@@ -161,6 +161,17 @@ def main() -> int:
         md_paths.append(local)
 
     print("2) 切分 + 每文件 SHA256 …")
+    eff_ba = args.boundary_aware or settings.chunk_boundary_aware
+    print(
+        "   切分配置: CHUNK_SIZE=%s CHUNK_OVERLAP=%s CHUNK_BOUNDARY_AWARE=%s "
+        "CHUNK_SEMANTIC_MERGE_ENABLED=%s"
+        % (
+            settings.chunk_size,
+            settings.chunk_overlap,
+            eff_ba,
+            settings.chunk_semantic_merge_enabled,
+        )
+    )
     merge_embedder = None
     if (
         settings.chunk_semantic_merge_enabled
@@ -173,7 +184,7 @@ def main() -> int:
     chunks, shas = load_chunks_with_sha256(
         None,
         md_paths=md_paths,
-        boundary_aware=args.boundary_aware,
+        boundary_aware=eff_ba,
         semantic_merge_enabled=settings.chunk_semantic_merge_enabled,
         semantic_merge_similarity=settings.chunk_semantic_merge_similarity,
         embedding_backend=merge_embedder,

@@ -18,6 +18,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 class Settings(BaseSettings):
     """MVP 所需配置；未列出的历史变量（如 MYSQL_*）会被忽略。"""
 
+    # Pydantic v2 类级配置（读 .env、忽略未知环境变量等），由框架消费；**不是**下方字段 ``model_config_path``。
     model_config = SettingsConfigDict(
         env_file=_PROJECT_ROOT / ".env",
         env_file_encoding="utf-8",
@@ -119,6 +120,15 @@ class Settings(BaseSettings):
         validation_alias="CHUNK_OVERLAP_MAX",
         description="句边界对齐时与上一块重叠的最高字符数；未设置时等于 CHUNK_OVERLAP",
     )
+    chunk_boundary_aware: bool = Field(
+        default=False,
+        validation_alias="CHUNK_BOUNDARY_AWARE",
+        description=(
+            "默认 False（纯字符滑窗，与历史行为一致）。"
+            "在 .env 设置 CHUNK_BOUNDARY_AWARE=true 后启用句边界对齐（滑窗初值后经重叠夹紧与句界微调）；"
+            "与入库、chunking.webui、QA 重解算一致"
+        ),
+    )
     retrieval_k: int = Field(
         default=5,
         ge=1,
@@ -130,6 +140,11 @@ class Settings(BaseSettings):
         ge=1,
         validation_alias="QA_MAX_CONTEXT_CHARS",
         description="问答时每条检索片段正文的最大字符数（超出截断，避免 prompt 过长）",
+    )
+    qa_resolve_chunks_from_source: bool = Field(
+        default=False,
+        validation_alias="QA_RESOLVE_CHUNKS_FROM_SOURCE",
+        description="为 True 时按 .env 切分参数从本地 source_path 重算块，用覆盖命中的块替换 ES 正文（需文件存在于项目根下）",
     )
     chunk_boundary_max_scan: Optional[int] = Field(
         default=None,

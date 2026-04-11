@@ -18,6 +18,7 @@ from chunking.boundary import (
     _effective_max_boundary_scan,
     iter_text_slices_boundary_aware,
 )
+from chunking.env_overlap import effective_boundary_overlap_params
 
 
 @dataclass
@@ -455,14 +456,21 @@ def iter_chunks_for_data_dir(
     if boundary_aware:
         if s is None:
             s = get_settings()
-        if overlap_floor is None:
-            overlap_floor = s.chunk_overlap_floor
-        if overlap_ceiling is None:
-            overlap_ceiling = s.chunk_overlap_ceiling
+        if overlap_floor is None and overlap_ceiling is None:
+            overlap_floor, overlap_ceiling, computed_bpo = effective_boundary_overlap_params(
+                chunk_size, chunk_overlap, s
+            )
+            if eff_bpo is None:
+                eff_bpo = computed_bpo
+        else:
+            if overlap_floor is None:
+                overlap_floor = s.chunk_overlap_floor
+            if overlap_ceiling is None:
+                overlap_ceiling = s.chunk_overlap_ceiling
+            if eff_bpo is None:
+                eff_bpo = s.chunk_boundary_priority_overlap
         if eff_mb is None:
             eff_mb = s.chunk_boundary_max_scan
-        if eff_bpo is None:
-            eff_bpo = s.chunk_boundary_priority_overlap
         if eff_car is None:
             eff_car = s.chunk_boundary_clamp_adjust_max_rounds
 

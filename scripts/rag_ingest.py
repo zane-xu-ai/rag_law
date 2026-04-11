@@ -59,7 +59,7 @@ def main() -> int:
     parser.add_argument(
         "--boundary-aware",
         action="store_true",
-        help="句边界对齐切分（默认关闭）",
+        help="句边界对齐切分；未指定时采用 .env 的 CHUNK_BOUNDARY_AWARE",
     )
     parser.add_argument(
         "--dry-run",
@@ -92,7 +92,18 @@ def main() -> int:
 
         merge_embedder = build_embedder(settings)
 
+    eff_ba = args.boundary_aware or settings.chunk_boundary_aware
     print("1) 切分 + 每文件 SHA256 …")
+    print(
+        "   切分配置: CHUNK_SIZE=%s CHUNK_OVERLAP=%s CHUNK_BOUNDARY_AWARE=%s "
+        "CHUNK_SEMANTIC_MERGE_ENABLED=%s"
+        % (
+            settings.chunk_size,
+            settings.chunk_overlap,
+            eff_ba,
+            settings.chunk_semantic_merge_enabled,
+        )
+    )
     if args.files:
         md_paths = [_resolve_project_path(p) for p in args.files]
         try:
@@ -103,7 +114,7 @@ def main() -> int:
         chunks, shas = load_chunks_with_sha256(
             None,
             md_paths=md_paths,
-            boundary_aware=args.boundary_aware,
+            boundary_aware=eff_ba,
             semantic_merge_enabled=settings.chunk_semantic_merge_enabled,
             semantic_merge_similarity=settings.chunk_semantic_merge_similarity,
             embedding_backend=merge_embedder,
@@ -114,7 +125,7 @@ def main() -> int:
     else:
         chunks, shas = load_chunks_with_sha256(
             args.data_dir if args.data_dir is not None else _ROOT / "data",
-            boundary_aware=args.boundary_aware,
+            boundary_aware=eff_ba,
             semantic_merge_enabled=settings.chunk_semantic_merge_enabled,
             semantic_merge_similarity=settings.chunk_semantic_merge_similarity,
             embedding_backend=merge_embedder,

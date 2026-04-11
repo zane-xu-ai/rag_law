@@ -162,6 +162,7 @@ def stream_qa_events(
     except Exception:  # pragma: no cover - 仅用于测试桩模块兼容
         _BadRequestError = Exception
 
+    from qa.hit_resolve import apply_hit_resolve_to_hits
     from qa.messages import build_messages
 
     t0 = _now()
@@ -233,6 +234,11 @@ def stream_qa_events(
         dense_dims=embedder.dense_dimension,
     )
     hits = store.search_knn(qv, k=k_eff)
+    hits = apply_hit_resolve_to_hits(
+        hits,
+        settings=settings,
+        embedding_backend=embedder,
+    )
     hit_count = len(hits)
     yield phase_end("es_search_knn")
 
