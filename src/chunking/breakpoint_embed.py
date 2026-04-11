@@ -425,3 +425,11 @@ def default_chunk_separator() -> str:
         + bar
         + "\n\n"
     )
+
+
+def split_breakpoint_export_to_chunks(export_text: str, *, separator: str | None = None) -> list[str]:
+    """按 :func:`default_chunk_separator` 拆 c03 导出全文，得到块文本列表。
+
+    约定：``"".join(chunks)`` 与写入导出前的原文一致（``split_overlap=0`` 时无字面重叠）。"""
+    sep = separator if separator is not None else default_chunk_separator()
+    return export_text.split(sep)

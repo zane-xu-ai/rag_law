@@ -1,0 +1,18 @@
+{
+  "description": "方案 C（breakpoint_embed）导出：与 scripts/c03_breakpoint_export.py + default_chunk_separator 一致；源文为 MinerU md3__宪法.md；供与方案 D 对比时作基准区间。",
+  "source_note": "tests/test_chunking/fixtures/宪法.md 与 data/md_minerU/md3__宪法.md 同步；fixtures/宪法_c03_breakpoint_export.md 与 data/chunk_md/c03_breakpoint/md3__宪法.md 同步。",
+  "chunk_count": 9,
+  "total_chars": 18390,
+  "ranges": [
+    [0, 1664],
+    [1664, 3864],
+    [3864, 6064],
+    [6064, 8264],
+    [8264, 10464],
+    [10464, 12664],
+    [12664, 14864],
+    [14864, 17064],
+    [17064, 18390]
+  ],
+  "chars_per_chunk": [1664, 2200, 2200, 2200, 2200, 2200, 2200, 2200, 1326]
+}

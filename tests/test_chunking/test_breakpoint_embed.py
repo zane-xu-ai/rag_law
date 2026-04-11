@@ -15,6 +15,7 @@ from chunking.breakpoint_embed import (
     export_breakpoint_chunks_dir,
     iter_breakpoint_chunks_for_text,
     raw_breakpoint_ranges,
+    split_breakpoint_export_to_chunks,
 )
 
 
@@ -71,6 +72,13 @@ def test_default_separator_contains_banner() -> None:
     s = default_chunk_separator()
     assert "CHUNK_BOUNDARY" in s
     assert s.count("#") >= 80
+
+
+def test_split_breakpoint_export_roundtrip() -> None:
+    sep = default_chunk_separator()
+    parts = ["aaa", "bbb"]
+    export = parts[0] + sep + parts[1]
+    assert split_breakpoint_export_to_chunks(export) == parts
 
 
 def test_pack_pipeline_matches_iter_chunks() -> None:
