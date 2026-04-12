@@ -39,7 +39,7 @@ def test_health(client: TestClient) -> None:
 def test_index_html(client: TestClient) -> None:
     r = client.get("/")
     assert r.status_code == 200
-    assert "Chunking" in r.text
+    assert "文档切分预览" in r.text
 
 
 def test_preview_json_short_full_mode(client: TestClient) -> None:

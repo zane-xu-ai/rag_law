@@ -8,19 +8,34 @@
   </head>
   <body>
     <header class="header">
-      <h1>字符滑窗切分预览</h1>
+      <h1>文档切分预览</h1>
       <p class="muted">
-        本地调试用：输入或上传 UTF-8 文本，使用与 <code>chunking.split</code> 相同的滑窗逻辑。无鉴权，请勿暴露到公网。
+        本地调试用：下方正文对「滑窗」与「方案 D」共用；无鉴权，请勿暴露到公网。
       </p>
     </header>
 
     <main class="layout">
-      <section class="panel">
-        <label for="text">正文</label>
-        <textarea id="text" rows="14" placeholder="在此粘贴文本，或仅使用下方上传文件…"></textarea>
+      <section class="panel panel-source">
+        <label for="text">正文（共用）</label>
+        <textarea id="text" rows="12" placeholder="在此粘贴文本，或仅使用下方上传文件…"></textarea>
 
         <label for="file">上传文本文件（UTF-8，可选）</label>
         <input id="file" type="file" accept=".txt,.md,text/plain" />
+      </section>
+
+      <nav class="tabs" role="tablist" aria-label="切分方式">
+        <button type="button" class="tab tab-active" data-tab="sliding" role="tab" aria-selected="true">
+          字符滑窗
+        </button>
+        <button type="button" class="tab" data-tab="docseg" role="tab" aria-selected="false">
+          方案 D · 文档分段模型
+        </button>
+      </nav>
+
+      <section class="panel tab-panel" id="panel_sliding" data-panel="sliding">
+        <p class="muted panel-lead">
+          与 <code>chunking.split</code> 相同：<code>chunk_size</code> / <code>chunk_overlap</code>、句边界、语义合并对比。
+        </p>
 
         <div class="row">
           <div>
@@ -65,8 +80,42 @@
           </div>
         </div>
 
-        <button type="button" id="btn" class="btn">切分</button>
+        <button type="button" id="btn" class="btn">滑窗切分</button>
         <p id="err" class="error" hidden></p>
+      </section>
+
+      <section class="panel tab-panel" id="panel_docseg" data-panel="docseg" hidden>
+        <p class="muted panel-lead">
+          与 <code>scripts/d04_document_segmentation_export.py</code> 同源；需
+          <code>uv sync --extra segmentation</code>。空字段读服务器 <code>.env</code>（<code>DOC_SEGMENTATION_*</code>）。
+        </p>
+        <p id="docseg_status" class="muted docseg-status" aria-live="polite"></p>
+
+        <label for="docseg_model_path">模型目录（可选，覆盖 DOCUMENT_SEGMENTATION_PATH）</label>
+        <input
+          id="docseg_model_path"
+          type="text"
+          autocomplete="off"
+          placeholder="留空则使用服务器 .env 中的路径"
+        />
+
+        <div class="row">
+          <div>
+            <label for="docseg_min_chars">min_chars（空则读配置）</label>
+            <input id="docseg_min_chars" type="number" min="0" placeholder="默认 0" />
+          </div>
+          <div>
+            <label for="docseg_max_chars">max_chars（空则读配置）</label>
+            <input id="docseg_max_chars" type="number" min="1" placeholder="默认 1200" />
+          </div>
+          <div>
+            <label for="docseg_split_overlap">split_overlap（空则读配置）</label>
+            <input id="docseg_split_overlap" type="number" min="0" placeholder="默认 0" />
+          </div>
+        </div>
+
+        <button type="button" id="btn_docseg" class="btn btn-secondary">文档分段预览</button>
+        <p id="err_docseg" class="error" hidden></p>
       </section>
 
       <section class="panel results" id="results" hidden>
@@ -75,7 +124,7 @@
           <pre id="summary" class="pre"></pre>
 
           <h2>分段展示</h2>
-          <p class="muted chunk-hint">
+          <p class="muted chunk-hint" id="chunk_hint_single">
             「与上一块/下一块重叠」表示相邻块在原文中<strong>重合</strong>的字符数（滑窗重叠），不是本块长度；本块长度见每段标题中的「本块 N 字」。
           </p>
           <p id="omit" class="omit muted"></p>

@@ -238,3 +238,60 @@ label.check input {
   margin: 0.65rem 0 0.35rem;
   color: var(--muted);
 }
+
+.panel-source {
+  margin-bottom: 0.25rem;
+}
+
+.panel-lead {
+  margin-top: 0;
+  margin-bottom: 0.85rem;
+  line-height: 1.45;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.tab {
+  font: inherit;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+  background: #e8e4dc;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab-active {
+  background: var(--panel);
+  color: var(--text);
+  border-bottom-color: var(--panel);
+  font-weight: 600;
+}
+
+input[type="text"]#docseg_model_path {
+  width: 100%;
+  margin-bottom: 0.85rem;
+  font: inherit;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.btn-secondary {
+  background: #3d6b6f;
+}
+
+.docseg-status {
+  font-size: 0.82rem;
+  margin: 0 0 0.75rem;
+  line-height: 1.45;
+}
