@@ -50,6 +50,17 @@ llm = [
 oss = [
     "alibabacloud-oss-v2>=1.2.0",
 ]
+# 方案 D：ModelScope document-segmentation（modelscope 的 pipeline 导入链需 torch/Pillow/datasets/addict 等，一并声明避免「只装 modelscope」仍无法 import）
+segmentation = [
+    "modelscope>=1.9,<2",
+    "torch>=2,<3",
+    "transformers>=4.41,<5",
+    "Pillow>=10,<12",
+    "addict>=2,<3",
+    "datasets>=2,<3",
+    "simplejson>=3,<4",
+    "sortedcontainers>=2,<3",
+]
 
 # uv：裸 `uv sync` 默认同步这些组（与 CI 的 pip install -e ".[dev,web]" 一致）。
 # web：chunking WebUI 测试需要 fastapi；与 optional-dependencies.web 保持版本一致。
@@ -75,6 +86,16 @@ llm = [
 ]
 oss = [
     "alibabacloud-oss-v2>=1.2.0",
+]
+segmentation = [
+    "modelscope>=1.9,<2",
+    "torch>=2,<3",
+    "transformers>=4.41,<5",
+    "Pillow>=10,<12",
+    "addict>=2,<3",
+    "datasets>=2,<3",
+    "simplejson>=3,<4",
+    "sortedcontainers>=2,<3",
 ]
 
 [tool.uv]

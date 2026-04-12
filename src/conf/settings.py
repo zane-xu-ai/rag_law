@@ -207,6 +207,36 @@ class Settings(BaseSettings):
         validation_alias="EMBEDDING_BATCH_SIZE",
     )
 
+    # --- 方案 D：文档分段模型（可选；与 BGE 分载）---
+    document_segmentation_path: Optional[str] = Field(
+        default=None,
+        validation_alias="DOCUMENT_SEGMENTATION_PATH",
+        description="本地 document-segmentation 模型目录（如 ModelScope 下载的 nlp_bert_document-segmentation_chinese-base）；空表示未配置",
+    )
+    chunk_doc_segmentation_enabled: bool = Field(
+        default=False,
+        validation_alias="CHUNK_DOC_SEGMENTATION_ENABLED",
+        description="为 True 且 document_segmentation_path 有效时，未来可接入 ingest 走方案 D（当前默认关）",
+    )
+    doc_segmentation_min_chars: int = Field(
+        default=0,
+        ge=0,
+        validation_alias="DOC_SEGMENTATION_MIN_CHARS",
+        description="方案 D：合并过短段的最小目标长度；0 不按长度合并。d04 未传 --min-chars 时读此值",
+    )
+    doc_segmentation_max_chars: int = Field(
+        default=1200,
+        ge=1,
+        validation_alias="DOC_SEGMENTATION_MAX_CHARS",
+        description="方案 D 超长段再切上限；d04 未传 --max-chars 时读此值",
+    )
+    doc_segmentation_split_overlap: int = Field(
+        default=0,
+        ge=0,
+        validation_alias="DOC_SEGMENTATION_SPLIT_OVERLAP",
+        description="方案 D 超长段二次滑窗重叠；默认 0 与方案 C 导出一致",
+    )
+
     # --- 日志（loguru）；详见 doc/plan/v1.1.0-logging-plan.md ---
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
     log_format: Literal["text", "json"] = Field(default="text", validation_alias="LOG_FORMAT")
