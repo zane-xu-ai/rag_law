@@ -36,6 +36,17 @@ def test_health(client: TestClient) -> None:
     assert r.json() == {"status": "ok"}
 
 
+def test_chunking_preview_config(client: TestClient) -> None:
+    r = client.get("/api/chunking-preview-config")
+    assert r.status_code == 200
+    j = r.json()
+    assert "doc_segmentation_min_chars" in j
+    assert "doc_segmentation_max_chars" in j
+    assert "chunk_md_heading_strategy" in j
+    assert "doc_segmentation_section_max_chars" in j
+    assert "modelscope_import_ok" in j
+
+
 def test_index_html(client: TestClient) -> None:
     r = client.get("/")
     assert r.status_code == 200

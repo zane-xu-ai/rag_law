@@ -1,6 +1,9 @@
 (function () {
   const $ = (id) => document.getElementById(id);
 
+  /** 标题+D 面板：仅用服务器配置填充一次表单，避免切换 Tab 时覆盖用户修改。 */
+  let d10ConfigHydrated = false;
+
   const sectionLabel = {
     all: "",
     first: "前段",
@@ -12,6 +15,8 @@
     "「与上一块/下一块重叠」表示相邻块在原文中重合的字符数（滑窗重叠），不是本块长度；本块长度见每段标题中的「本块 N 字」。";
   const CHUNK_HINT_DOCSEG =
     "方案 D：相邻块通常无滑窗式重叠（多为 0）；本块长度见「本块 N 字」。边界来自文档分段模型 + min/max 与换行优先再切分。";
+  const CHUNK_HINT_D10 =
+    "标题预切分 + D：块边界以标题叶子为主，仅超长叶子段内再跑方案 D；相邻重叠多为 0 或来自段内再切分。";
 
   function showError(msg) {
     const el = $("err");
@@ -21,6 +26,13 @@
 
   function showErrorDocseg(msg) {
     const el = $("err_docseg");
+    el.textContent = msg;
+    el.hidden = !msg;
+  }
+
+  function showErrorD10(msg) {
+    const el = $("err_d10");
+    if (!el) return;
     el.textContent = msg;
     el.hidden = !msg;
   }
@@ -47,8 +59,13 @@
   function setChunkHintSingle(summary) {
     const el = $("chunk_hint_single");
     if (!el) return;
-    el.textContent =
-      summary.method === "document_segmentation_d" ? CHUNK_HINT_DOCSEG : CHUNK_HINT_SLIDING;
+    if (summary.method === "document_segmentation_d") {
+      el.textContent = CHUNK_HINT_DOCSEG;
+    } else if (summary.method === "heading_presplit_d10") {
+      el.textContent = CHUNK_HINT_D10;
+    } else {
+      el.textContent = CHUNK_HINT_SLIDING;
+    }
   }
 
   function renderSummary(s, summaryPreId) {
@@ -59,6 +76,34 @@
         `块数: ${s.chunk_count}`,
         `model_dir: ${s.model_dir}`,
         `min_chars / max_chars / split_overlap: ${s.doc_segmentation_min_chars} / ${s.doc_segmentation_max_chars} / ${s.doc_segmentation_split_overlap}`,
+        `原文段落数(粗分): ${s.source_paragraphs}`,
+      ];
+      if (s.doc_segmentation_note) {
+        lines.push("", "说明:", s.doc_segmentation_note);
+      }
+      lines.push(
+        "",
+        "每段字符数: " + JSON.stringify(s.chars_per_chunk),
+        "每段字符数 min/max/avg: " + JSON.stringify(s.chars_per_chunk_stats),
+        "",
+        "相邻块在原文中的间隙/重叠(字): " + JSON.stringify(s.overlap_between_adjacent),
+        "相邻统计: " + JSON.stringify(s.overlap_adjacent_stats),
+      );
+      $(summaryPreId).textContent = lines.join("\n");
+      return;
+    }
+
+    if (s.method === "heading_presplit_d10") {
+      const lines = [
+        "切分方式: 标题预切分 + 段内方案 D（v1.1.10 / d05）",
+        `总字符数: ${s.total_chars}`,
+        `块数: ${s.chunk_count}`,
+        `标题叶子数: ${s.heading_leaf_count}`,
+        `model_dir: ${s.model_dir}`,
+        `min / max / split_overlap / section_max: ${s.doc_segmentation_min_chars} / ${s.doc_segmentation_max_chars} / ${s.doc_segmentation_split_overlap} / ${s.doc_segmentation_section_max_chars}`,
+        `chunk_md_heading_strategy: ${s.chunk_md_heading_strategy}`,
+        `chunk_md_heading_fixed_level: ${s.chunk_md_heading_fixed_level ?? "null"}`,
+        `chunk_md_heading_single_immediate_child: ${s.chunk_md_heading_single_immediate_child}`,
         `原文段落数(粗分): ${s.source_paragraphs}`,
       ];
       if (s.doc_segmentation_note) {
@@ -299,6 +344,89 @@
     }
   }
 
+  async function runD10() {
+    showErrorD10("");
+    $("results").hidden = true;
+
+    const ta = $("text").value;
+    const fileInput = $("file").files && $("file").files[0];
+    const modelRaw = $("d10_model_path").value.trim();
+    const jsonPayload = { text: ta };
+    if (modelRaw) jsonPayload.model_path = modelRaw;
+    const dmin = parseOptionalInt("d10_min_chars");
+    const dmax = parseOptionalInt("d10_max_chars");
+    const dov = parseOptionalInt("d10_split_overlap");
+    const dsec = parseOptionalInt("d10_section_max_chars");
+    if (dmin != null) jsonPayload.min_chars = dmin;
+    if (dmax != null) jsonPayload.max_chars = dmax;
+    if (dov != null) jsonPayload.split_overlap = dov;
+    if (dsec != null) jsonPayload.section_max_chars = dsec;
+
+    const strat = $("d10_heading_strategy").value.trim();
+    if (strat) jsonPayload.heading_strategy = strat;
+    const fixedRaw = $("d10_heading_fixed_level").value.trim();
+    if (fixedRaw) {
+      const n = parseInt(fixedRaw, 10);
+      if (!Number.isNaN(n)) jsonPayload.heading_fixed_level = n;
+    }
+    const single = $("d10_heading_single_child").value.trim();
+    if (single) jsonPayload.heading_single_child = single;
+
+    let res;
+    try {
+      if (fileInput) {
+        const fd = new FormData();
+        fd.append("text", ta);
+        fd.append("file", fileInput);
+        if (modelRaw) fd.append("model_path", modelRaw);
+        if (dmin != null) fd.append("min_chars", String(dmin));
+        if (dmax != null) fd.append("max_chars", String(dmax));
+        if (dov != null) fd.append("split_overlap", String(dov));
+        if (dsec != null) fd.append("section_max_chars", String(dsec));
+        if (strat) fd.append("heading_strategy", strat);
+        if (fixedRaw && !Number.isNaN(parseInt(fixedRaw, 10))) {
+          fd.append("heading_fixed_level", fixedRaw);
+        }
+        if (single) fd.append("heading_single_child", single);
+        res = await fetch("/api/preview-heading-presplit-document-segmentation", {
+          method: "POST",
+          body: fd,
+        });
+      } else {
+        res = await fetch("/api/preview-heading-presplit-document-segmentation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(jsonPayload),
+        });
+      }
+
+      if (!res.ok) {
+        let detail = res.statusText;
+        try {
+          const j = await res.json();
+          if (j.detail) {
+            detail =
+              typeof j.detail === "string"
+                ? j.detail
+                : JSON.stringify(j.detail);
+          }
+        } catch (_) {}
+        showErrorD10(`${res.status}: ${detail}`);
+        return;
+      }
+
+      const data = await res.json();
+      $("results_single").hidden = false;
+      $("results_compare").hidden = true;
+      renderSummary(data.summary, "summary");
+      setChunkHintSingle(data.summary);
+      renderChunks(data.display, data.summary, "chunks", "omit");
+      $("results").hidden = false;
+    } catch (e) {
+      showErrorD10(String(e));
+    }
+  }
+
   async function runDocSeg() {
     showErrorDocseg("");
     $("results").hidden = true;
@@ -364,6 +492,79 @@
     }
   }
 
+  async function loadD10Config() {
+    const el = $("d10_status");
+    if (!el) return;
+    el.textContent = "正在读取切分预览配置…";
+    try {
+      const res = await fetch("/api/chunking-preview-config");
+      if (!res.ok) {
+        el.textContent = "无法读取 /api/chunking-preview-config";
+        return;
+      }
+      const j = await res.json();
+      const parts = [];
+      parts.push(
+        j.modelscope_import_ok
+          ? "modelscope 已安装。"
+          : "modelscope 未安装（请 uv sync --extra segmentation）。",
+      );
+      if (j.document_segmentation_path) {
+        parts.push(
+          j.path_exists
+            ? `DOCUMENT_SEGMENTATION_PATH 已配置且目录存在。`
+            : `DOCUMENT_SEGMENTATION_PATH=${j.document_segmentation_path}（目录不存在）`,
+        );
+      } else {
+        parts.push("DOCUMENT_SEGMENTATION_PATH 未配置；可在上方填写模型目录。");
+      }
+      parts.push(
+        `默认 min/max/overlap/section_max: ${j.doc_segmentation_min_chars} / ${j.doc_segmentation_max_chars} / ${j.doc_segmentation_split_overlap} / ${j.doc_segmentation_section_max_chars}；heading: ${j.chunk_md_heading_strategy} / single_child=${j.chunk_md_heading_single_immediate_child}`,
+      );
+      el.textContent = parts.join(" ");
+
+      if (!d10ConfigHydrated) {
+        d10ConfigHydrated = true;
+        const mp = $("d10_model_path");
+        if (mp && !mp.value.trim() && j.document_segmentation_path) {
+          mp.placeholder = j.document_segmentation_path;
+        }
+        const setPh = (id, v) => {
+          const node = $(id);
+          if (node && v != null && !node.value.trim()) {
+            node.placeholder = `默认 ${v}`;
+          }
+        };
+        setPh("d10_min_chars", j.doc_segmentation_min_chars);
+        setPh("d10_max_chars", j.doc_segmentation_max_chars);
+        setPh("d10_split_overlap", j.doc_segmentation_split_overlap);
+        setPh("d10_section_max_chars", j.doc_segmentation_section_max_chars);
+
+        const selStrat = $("d10_heading_strategy");
+        if (selStrat && j.chunk_md_heading_strategy) {
+          const opt = Array.from(selStrat.options).find((o) => o.value === j.chunk_md_heading_strategy);
+          if (!opt) {
+            const o = document.createElement("option");
+            o.value = j.chunk_md_heading_strategy;
+            o.textContent = `（.env）${j.chunk_md_heading_strategy}`;
+            selStrat.appendChild(o);
+          }
+          selStrat.value = j.chunk_md_heading_strategy;
+        }
+        const fl = $("d10_heading_fixed_level");
+        if (fl && j.chunk_md_heading_fixed_level != null && !fl.value.trim()) {
+          fl.placeholder = `默认 ${j.chunk_md_heading_fixed_level}`;
+        }
+        const selSingle = $("d10_heading_single_child");
+        if (selSingle && j.chunk_md_heading_single_immediate_child) {
+          selSingle.value = j.chunk_md_heading_single_immediate_child;
+        }
+      }
+    } catch (e) {
+      el.textContent = String(e);
+    }
+  }
+
   async function loadDocSegStatus() {
     const el = $("docseg_status");
     if (!el) return;
@@ -408,6 +609,9 @@
     if (name === "docseg") {
       loadDocSegStatus();
     }
+    if (name === "d10") {
+      loadD10Config();
+    }
   }
 
   document.querySelectorAll(".tab").forEach((btn) => {
@@ -416,6 +620,8 @@
 
   $("btn").addEventListener("click", run);
   $("btn_docseg").addEventListener("click", runDocSeg);
+  const b10 = $("btn_d10");
+  if (b10) b10.addEventListener("click", runD10);
   $("compare_semantic").addEventListener("change", syncSemanticParamsRow);
   syncSemanticParamsRow();
 })();

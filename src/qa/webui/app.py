@@ -17,11 +17,16 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from chunking.webui.d10_preview import (
+    chunking_preview_config_dict,
+    handle_preview_heading_presplit_document_segmentation,
+)
+from chunking.webui.docseg_cache import get_or_build_document_segmentation_pipeline
 from conf.settings import project_root
 from qa.streaming import format_sse_event, stream_qa_events
 
@@ -105,6 +110,24 @@ async def log_http_requests(request: Request, call_next):
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/chunking-preview-config")
+def api_chunking_preview_config() -> dict[str, Any]:
+    """与 chunking WebUI 同源：供前端默认填充（读 ``.env`` / ``get_settings()``）。"""
+    return chunking_preview_config_dict()
+
+
+@app.post("/api/preview-heading-presplit-document-segmentation")
+async def api_preview_heading_presplit_document_segmentation(
+    request: Request,
+) -> JSONResponse:
+    """标题预切分 + 段内方案 D 预览（与 ``scripts/d05_...`` 同源）。"""
+    payload = await handle_preview_heading_presplit_document_segmentation(
+        request,
+        get_pipeline=get_or_build_document_segmentation_pipeline,
+    )
+    return JSONResponse(payload)
 
 
 def _load_random_query_pool() -> list[str]:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import threading
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,14 @@ from starlette.concurrency import run_in_threadpool
 from chunking.env_overlap import effective_boundary_overlap_params
 from chunking.split import TextChunk, iter_chunks_for_text
 from conf.settings import get_settings
+from chunking.webui.docseg_cache import (
+    clear_document_segmentation_pipeline_cache,
+    get_or_build_document_segmentation_pipeline,
+)
+from chunking.webui.d10_preview import (
+    chunking_preview_config_dict,
+    handle_preview_heading_presplit_document_segmentation,
+)
 from chunking.webui.preview_logic import (
     MAX_PREVIEW_BYTES,
     adjacent_overlaps,
@@ -22,28 +29,14 @@ from chunking.webui.preview_logic import (
     section_for_display_index,
     source_paragraph_count,
 )
+from chunking.webui.preview_payload import chunks_to_single_preview as _chunks_to_single_preview
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-_doc_seg_pipeline_lock = threading.Lock()
-_doc_seg_pipelines: dict[str, Any] = {}
-
-
-def clear_document_segmentation_pipeline_cache() -> None:
-    """测试或热切换模型目录时清空缓存。"""
-    with _doc_seg_pipeline_lock:
-        _doc_seg_pipelines.clear()
-
 
 def _get_or_build_document_segmentation_pipeline(model_dir: Path) -> Any:
-    """按模型目录缓存 pipeline；首次加载可能较慢。"""
-    key = str(model_dir.expanduser().resolve())
-    with _doc_seg_pipeline_lock:
-        if key not in _doc_seg_pipelines:
-            from chunking.document_segmentation import build_document_segmentation_pipeline
-
-            _doc_seg_pipelines[key] = build_document_segmentation_pipeline(key)
-        return _doc_seg_pipelines[key]
+    """按模型目录缓存 pipeline（供路由与测试 monkeypatch 同名入口）。"""
+    return get_or_build_document_segmentation_pipeline(model_dir)
 
 
 class PreviewJSONBody(BaseModel):
@@ -324,72 +317,6 @@ def _run_preview(
     }
 
 
-def _agg_ints(nums: list[int]) -> dict | None:
-    if not nums:
-        return None
-    return {"min": min(nums), "max": max(nums), "avg": round(sum(nums) / len(nums), 2)}
-
-
-def _chunks_to_single_preview(text: str, chunks: list[TextChunk], *, summary: dict) -> dict:
-    """由已切好的 ``TextChunk`` 列表生成与滑窗预览相同外形的 ``summary`` + ``display``。"""
-    n = len(chunks)
-    ranges = [(c.char_start, c.char_end) for c in chunks]
-    overlaps = adjacent_overlaps(ranges)
-    lengths = [len(c.text) for c in chunks]
-    summary_out = {
-        **summary,
-        "total_chars": len(text),
-        "chunk_count": n,
-        "chars_per_chunk": lengths,
-        "chars_per_chunk_stats": _agg_ints(lengths),
-        "overlap_between_adjacent": overlaps,
-        "overlap_adjacent_stats": _agg_ints(overlaps) if overlaps else None,
-        "source_paragraphs": source_paragraph_count(text),
-    }
-
-    if n == 0:
-        display = {
-            "mode": "full",
-            "total_chunks": 0,
-            "omitted_message": None,
-            "chunks": [],
-        }
-        return {"mode": "single", "summary": summary_out, "display": display}
-
-    mode = "full" if n <= 15 else "truncated"
-    indices = pick_display_indices(n)
-    display_chunks: list[dict] = []
-    for i in indices:
-        c = chunks[i]
-        overlap_prev = overlaps[i - 1] if i > 0 else 0
-        overlap_next = overlaps[i] if i < n - 1 else 0
-        display_chunks.append(
-            {
-                "index": c.chunk_index,
-                "text": c.text,
-                "char_start": c.char_start,
-                "char_end": c.char_end,
-                "section": section_for_display_index(i, n),
-                "overlap_prev": overlap_prev,
-                "overlap_next": overlap_next,
-            }
-        )
-
-    omitted_message: str | None = None
-    if mode == "truncated":
-        omitted_message = (
-            f"共 {n} 段，仅展示前 5、中间 5、后 5 段（共 15 段），其余已省略。"
-        )
-
-    display = {
-        "mode": mode,
-        "total_chunks": n,
-        "omitted_message": omitted_message,
-        "chunks": display_chunks,
-    }
-    return {"mode": "single", "summary": summary_out, "display": display}
-
-
 def _resolve_model_dir_for_doc_seg(model_path: str | None) -> Path:
     st = get_settings()
     raw = (model_path or "").strip() or (st.document_segmentation_path or "")
@@ -555,6 +482,12 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/chunking-preview-config")
+def api_chunking_preview_config() -> dict[str, Any]:
+    """滑窗 / 方案 D / 标题预切分预览表单的默认值：来自服务器 ``get_settings()``（``.env``）。"""
+    return chunking_preview_config_dict()
+
+
 @app.get("/api/document-segmentation/status")
 def document_segmentation_status() -> dict[str, Any]:
     """方案 D：模型路径与 modelscope 是否可 import（不加载权重）。"""
@@ -662,6 +595,18 @@ async def api_preview_document_segmentation(request: Request) -> JSONResponse:
             detail="文档分段推理失败：%s" % (e,),
         ) from e
 
+    return JSONResponse(payload)
+
+
+@app.post("/api/preview-heading-presplit-document-segmentation")
+async def api_preview_heading_presplit_document_segmentation(
+    request: Request,
+) -> JSONResponse:
+    """v1.1.10：Markdown 标题预切分 + 段内方案 D（与 ``d05`` 导出脚本同源）。"""
+    payload = await handle_preview_heading_presplit_document_segmentation(
+        request,
+        get_pipeline=_get_or_build_document_segmentation_pipeline,
+    )
     return JSONResponse(payload)
 
 

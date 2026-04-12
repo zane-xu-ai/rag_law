@@ -69,6 +69,14 @@ def test_health(client: TestClient) -> None:
     assert r.json() == {"status": "ok"}
 
 
+def test_chunking_preview_config_on_qa_webui(client: TestClient) -> None:
+    r = client.get("/api/chunking-preview-config")
+    assert r.status_code == 200
+    j = r.json()
+    assert "chunk_md_heading_strategy" in j
+    assert "doc_segmentation_max_chars" in j
+
+
 def test_qa_stream_returns_sse_lines(client: TestClient) -> None:
     """不依赖真实 openai：mock `find_spec` 与 `stream_qa_events`。"""
     import json

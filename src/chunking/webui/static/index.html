@@ -30,6 +30,9 @@
         <button type="button" class="tab" data-tab="docseg" role="tab" aria-selected="false">
           方案 D · 文档分段模型
         </button>
+        <button type="button" class="tab" data-tab="d10" role="tab" aria-selected="false">
+          标题预切分 + 方案 D
+        </button>
       </nav>
 
       <section class="panel tab-panel" id="panel_sliding" data-panel="sliding">
@@ -116,6 +119,68 @@
 
         <button type="button" id="btn_docseg" class="btn btn-secondary">文档分段预览</button>
         <p id="err_docseg" class="error" hidden></p>
+      </section>
+
+      <section class="panel tab-panel" id="panel_d10" data-panel="d10" hidden>
+        <p class="muted panel-lead">
+          与 <code>scripts/d05_heading_presplit_document_segmentation_export.py</code> 同源：ATX 标题递归预切分后，超长叶子在段内跑方案 D。空字段读服务器
+          <code>.env</code>（<code>CHUNK_MD_HEADING_*</code>、<code>DOC_SEGMENTATION_*</code>）。
+        </p>
+        <p id="d10_status" class="muted docseg-status" aria-live="polite"></p>
+
+        <label for="d10_model_path">模型目录（可选，覆盖 DOCUMENT_SEGMENTATION_PATH）</label>
+        <input
+          id="d10_model_path"
+          type="text"
+          autocomplete="off"
+          placeholder="留空则使用服务器 .env 中的路径"
+        />
+
+        <div class="row">
+          <div>
+            <label for="d10_min_chars">min_chars（空则读配置）</label>
+            <input id="d10_min_chars" type="number" min="0" placeholder="默认 0" />
+          </div>
+          <div>
+            <label for="d10_max_chars">max_chars（空则读配置）</label>
+            <input id="d10_max_chars" type="number" min="1" placeholder="默认 1200" />
+          </div>
+          <div>
+            <label for="d10_split_overlap">split_overlap（空则读配置）</label>
+            <input id="d10_split_overlap" type="number" min="0" placeholder="默认 0" />
+          </div>
+          <div>
+            <label for="d10_section_max_chars">section_max_chars（空则读配置）</label>
+            <input id="d10_section_max_chars" type="number" min="1" placeholder="默认同 max_chars" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="d10_heading_strategy">heading_strategy</label>
+            <select id="d10_heading_strategy">
+              <option value="">（读 .env）</option>
+              <option value="deepest_with_multiple">deepest_with_multiple</option>
+              <option value="shallowest_with_multiple">shallowest_with_multiple</option>
+              <option value="none">none</option>
+            </select>
+          </div>
+          <div>
+            <label for="d10_heading_fixed_level">heading_fixed_level（1–6，空则读配置）</label>
+            <input id="d10_heading_fixed_level" type="number" min="1" max="6" placeholder="可选" />
+          </div>
+          <div>
+            <label for="d10_heading_single_child">heading_single_child</label>
+            <select id="d10_heading_single_child">
+              <option value="">（读 .env）</option>
+              <option value="strict">strict</option>
+              <option value="relaxed">relaxed</option>
+            </select>
+          </div>
+        </div>
+
+        <button type="button" id="btn_d10" class="btn btn-secondary">标题预切分 + D 预览</button>
+        <p id="err_d10" class="error" hidden></p>
       </section>
 
       <section class="panel results" id="results" hidden>

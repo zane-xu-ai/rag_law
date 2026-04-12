@@ -130,6 +130,49 @@ def test_preview_document_segmentation_overlap_invalid(
     assert r.status_code == 422
 
 
+def test_preview_heading_presplit_json_fake_pipeline(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "fake_heading_d10"
+    base.mkdir()
+
+    class FakeP:
+        def __call__(self, x: str) -> list[str]:
+            if len(x) >= 6:
+                return [x[:3], x[3:]]
+            return [x]
+
+    monkeypatch.setattr(
+        "chunking.webui.d10_preview._resolve_model_dir",
+        lambda _mp: base,
+    )
+    monkeypatch.setattr(
+        _webui_mod,
+        "_get_or_build_document_segmentation_pipeline",
+        lambda _p: FakeP(),
+    )
+
+    md = "## 节\n" + "abcdefghij"
+    r = client.post(
+        "/api/preview-heading-presplit-document-segmentation",
+        json={
+            "text": md,
+            "min_chars": 0,
+            "max_chars": 100,
+            "split_overlap": 0,
+            "heading_strategy": "none",
+        },
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["mode"] == "single"
+    assert data["summary"]["method"] == "heading_presplit_d10"
+    assert data["summary"]["chunk_md_heading_strategy"] == "none"
+    assert data["summary"]["chunk_count"] >= 1
+
+
 def test_preview_document_segmentation_multipart(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
