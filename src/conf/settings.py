@@ -236,6 +236,33 @@ class Settings(BaseSettings):
         validation_alias="DOC_SEGMENTATION_SPLIT_OVERLAP",
         description="方案 D 超长段二次滑窗重叠；默认 0 与方案 C 导出一致",
     )
+    doc_segmentation_section_max_chars: Optional[int] = Field(
+        default=None,
+        ge=1,
+        validation_alias="DOC_SEGMENTATION_SECTION_MAX_CHARS",
+        description="v1.1.10：标题叶子超过该长度才在段内跑 D；未设则与 DOC_SEGMENTATION_MAX_CHARS 相同",
+    )
+    chunk_md_heading_strategy: Literal[
+        "deepest_with_multiple",
+        "shallowest_with_multiple",
+        "none",
+    ] = Field(
+        default="deepest_with_multiple",
+        validation_alias="CHUNK_MD_HEADING_STRATEGY",
+        description="v1.1.10：Markdown ATX 标题预切分策略（首轮与递归内选层）",
+    )
+    chunk_md_heading_fixed_level: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=6,
+        validation_alias="CHUNK_MD_HEADING_FIXED_LEVEL",
+        description="若设置则首轮强制按该 ATX 层级切，忽略全局多头统计",
+    )
+    chunk_md_heading_single_immediate_child: Literal["strict", "relaxed"] = Field(
+        default="strict",
+        validation_alias="CHUNK_MD_HEADING_SINGLE_IMMEDIATE_CHILD",
+        description="strict：段内直接下一级标题仅一条时不再做标题递归细分",
+    )
 
     # --- 日志（loguru）；详见 doc/plan/v1.1.0-logging-plan.md ---
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
