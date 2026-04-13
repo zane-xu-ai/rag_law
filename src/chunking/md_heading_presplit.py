@@ -218,6 +218,41 @@ def leaf_ranges_heading_presplit(
     return leaves
 
 
+def _first_heading_in_leaf(
+    headings: list[tuple[int, int]], leaf_lo: int, leaf_hi: int
+) -> tuple[int | None, int | None]:
+    """在 ``[leaf_lo, leaf_hi)`` 内找第一个 ATX 标题行首与层级；无则 ``(None, None)``（序言叶子）。"""
+    for pos, lv in headings:
+        if leaf_lo <= pos < leaf_hi:
+            return pos, lv
+    return None, None
+
+
+def _leaf_section_meta_for_extra(
+    *,
+    source_key: str,
+    leaf_lo: int,
+    leaf_hi: int,
+    headings: list[tuple[int, int]],
+) -> dict[str, Any]:
+    """叶子级小节元数据（不含 ``document_chunk_id``，该序号按最终 chunk 递增）。"""
+    anchor, lvl = _first_heading_in_leaf(headings, leaf_lo, leaf_hi)
+    if anchor is not None:
+        section_heading_id = "%s#h%s@%s" % (source_key, lvl, anchor)
+        heading_level: int | None = lvl
+    else:
+        section_heading_id = "%s#prelude@%s" % (source_key, leaf_lo)
+        heading_level = None
+    out: dict[str, Any] = {
+        "section_heading_id": section_heading_id,
+        "leaf_char_start": leaf_lo,
+        "leaf_char_end": leaf_hi,
+    }
+    if heading_level is not None:
+        out["heading_level"] = heading_level
+    return out
+
+
 def default_heading_presplit_separator() -> str:
     """与方案 D 导出同形分隔条，标注 v1.1.10 便于区分文件来源。"""
     bar = "#" * 88
@@ -248,11 +283,19 @@ def iter_heading_presplit_document_segmentation_chunks_for_text(
     否则叶子整块作为一个 ``TextChunk``（``extra`` 区分是否经过 D）。
     """
     sid = source_path or source_file
+    source_key = source_path or source_file
+    headings = parse_atx_heading_spans(full_text)
     out_idx = 0
     for s, e in leaf_ranges:
         if e <= s:
             continue
         piece = full_text[s:e]
+        meta = _leaf_section_meta_for_extra(
+            source_key=source_key,
+            leaf_lo=s,
+            leaf_hi=e,
+            headings=headings,
+        )
         if len(piece) <= section_max_chars:
             yield TextChunk(
                 text=piece,
@@ -262,7 +305,12 @@ def iter_heading_presplit_document_segmentation_chunks_for_text(
                 char_end=e,
                 source_path=source_path,
                 source_id=sid,
-                extra={"chunking": "heading_presplit_leaf", "scheme_d": False},
+                extra={
+                    "chunking": "heading_presplit_leaf",
+                    "scheme_d": False,
+                    "document_chunk_id": out_idx,
+                    **meta,
+                },
             )
             out_idx += 1
             continue
@@ -283,7 +331,12 @@ def iter_heading_presplit_document_segmentation_chunks_for_text(
                 char_end=s + c.char_end,
                 source_path=source_path,
                 source_id=sid,
-                extra={"chunking": "heading_presplit_d10", "scheme_d": True},
+                extra={
+                    "chunking": "heading_presplit_d10",
+                    "scheme_d": True,
+                    "document_chunk_id": out_idx,
+                    **meta,
+                },
             )
             out_idx += 1
 

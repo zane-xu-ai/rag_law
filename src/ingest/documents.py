@@ -10,6 +10,12 @@ from chunking.split import TextChunk
 
 from es_store.chunk_defaults import apply_chunk_source_defaults
 
+_EXTRA_KEYS_PROMOTED_TO_SOURCE = (
+    "document_chunk_id",
+    "section_heading_id",
+    "heading_level",
+)
+
 
 def chunk_embedding_to_source(
     chunk: TextChunk,
@@ -44,7 +50,14 @@ def chunk_embedding_to_source(
     if chunk_version:
         row["chunk_version"] = chunk_version
     if chunk.extra:
-        row["extra"] = chunk.extra
+        extra_rest: dict[str, Any] = dict(chunk.extra)
+        for k in _EXTRA_KEYS_PROMOTED_TO_SOURCE:
+            if k in extra_rest:
+                v = extra_rest.pop(k)
+                if v is not None:
+                    row[k] = v
+        if extra_rest:
+            row["extra"] = extra_rest
     return apply_chunk_source_defaults(row)
 
 

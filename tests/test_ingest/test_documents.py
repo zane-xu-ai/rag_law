@@ -60,6 +60,32 @@ def test_chunk_embedding_to_source_oss_url() -> None:
     assert d["source_oss_url"] == "https://md3.oss-cn-beijing.aliyuncs.com/a/b.md"
 
 
+def test_chunk_embedding_promotes_heading_fields_from_extra() -> None:
+    c = TextChunk(
+        text="x",
+        source_file="f.md",
+        chunk_index=0,
+        char_start=0,
+        char_end=1,
+        source_path="data/f.md",
+        extra={
+            "chunking": "heading_presplit_leaf",
+            "document_chunk_id": 0,
+            "section_heading_id": "data/f.md#h1@0",
+            "heading_level": 1,
+            "leaf_char_start": 0,
+            "leaf_char_end": 10,
+        },
+    )
+    d = chunk_embedding_to_source(c, [0.1])
+    assert d["document_chunk_id"] == 0
+    assert d["section_heading_id"] == "data/f.md#h1@0"
+    assert d["heading_level"] == 1
+    assert d["extra"]["chunking"] == "heading_presplit_leaf"
+    assert d["extra"]["leaf_char_start"] == 0
+    assert "document_chunk_id" not in d["extra"]
+
+
 def test_chunk_embedding_to_source_chunk_version() -> None:
     c = TextChunk(
         text="v",
