@@ -9,6 +9,13 @@ from typing import Any
 import pytest
 
 from conf.settings import get_settings
+from qa.streaming import (
+    _brief_text,
+    _delta_reasoning_and_content,
+    _provider_from_base_url,
+    _qa_audit_retrieval_items,
+    stream_qa_events,
+)
 
 
 def _base_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -110,8 +117,6 @@ def test_stream_qa_events_emits_phases_done_and_ttft(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr("es_store.client.elasticsearch_client", lambda s: object())
     monkeypatch.setattr("es_store.store.EsChunkStore", FakeStore)
 
-    from qa.streaming import stream_qa_events
-
     events = list(
         stream_qa_events(
             "测试问题？",
@@ -180,8 +185,6 @@ def test_stream_qa_events_reasoning_delta_and_done_reasoning_text(
     monkeypatch.setattr("es_store.client.elasticsearch_client", lambda s: object())
     monkeypatch.setattr("es_store.store.EsChunkStore", FakeStore)
 
-    from qa.streaming import stream_qa_events
-
     events = list(stream_qa_events("q?", settings=settings))
     reasoning_deltas = [e for e in events if e["type"] == "reasoning_delta"]
     assert [e["content"] for e in reasoning_deltas] == ["考"]
@@ -231,8 +234,6 @@ def test_stream_qa_events_injected_clients_mark_cached(monkeypatch: pytest.Monke
 
     monkeypatch.setattr("es_store.store.EsChunkStore", FakeStore)
 
-    from qa.streaming import stream_qa_events
-
     events = list(
         stream_qa_events(
             "q",
@@ -250,3 +251,215 @@ def test_stream_qa_events_injected_clients_mark_cached(monkeypatch: pytest.Monke
     assert es_ev.get("cached") is True
     llm_ev = [e for e in phases if e.get("phase") == "llm_client_ready"][0]
     assert llm_ev.get("cached") is True
+
+
+def test_provider_from_base_url_branches() -> None:
+    assert _provider_from_base_url(None) == "openai_compatible"
+    assert _provider_from_base_url("https://dashscope.aliyuncs.com/v1") == "dashscope"
+    assert _provider_from_base_url("https://api.openai.com/v1") == "openai"
+    assert _provider_from_base_url("https://example.com/v1") == "openai_compatible"
+
+
+def test_brief_text_short_and_long() -> None:
+    assert _brief_text("ab") == "ab"
+    long_s = "a" * 50
+    out = _brief_text(long_s, head=5, tail=5)
+    assert out.startswith("aaaaa")
+    assert out.endswith("aaaaa")
+    assert "..." in out
+
+
+def test_delta_reasoning_and_content_branches() -> None:
+    class _EmptyChoice:
+        delta = None
+
+    assert _delta_reasoning_and_content(_EmptyChoice()) == (None, None)
+
+    class _Delta:
+        def __init__(self) -> None:
+            self.content = ""
+            self.reasoning_content = "r"
+
+    class _Ch:
+        delta = _Delta()
+
+    r, c = _delta_reasoning_and_content(_Ch())
+    assert r == "r" and c is None
+
+    class _D2:
+        content = "hi"
+        thinking = "t1"
+
+    class _Ch2:
+        delta = _D2()
+
+    r2, c2 = _delta_reasoning_and_content(_Ch2())
+    assert r2 == "t1" and c2 == "hi"
+
+    class _D3:
+        content = None
+        model_extra = {"reasoning": "mr"}
+
+    class _Ch3:
+        delta = _D3()
+
+    r3, c3 = _delta_reasoning_and_content(_Ch3())
+    assert r3 == "mr" and c3 is None
+
+    class _D4:
+        content = "c"
+
+        def model_dump(self, exclude_unset: bool = False) -> dict[str, object]:
+            return {"thinking": "mt"}
+
+    class _Ch4:
+        delta = _D4()
+
+    r4, c4 = _delta_reasoning_and_content(_Ch4())
+    assert r4 == "mt" and c4 == "c"
+
+    class _D5:
+        reasoning_content = ""
+
+        def model_dump(self, exclude_unset: bool = False) -> dict[str, object]:
+            return {}
+
+    class _Ch5:
+        delta = _D5()
+
+    r5, c5 = _delta_reasoning_and_content(_Ch5())
+    assert r5 is None and c5 is None
+
+
+def test_qa_audit_retrieval_items_fields() -> None:
+    items = _qa_audit_retrieval_items(
+        [
+            {
+                "score": 0.5,
+                "id": "cid",
+                "source": {
+                    "text": "x" * 200,
+                    "doc_name": "dn.md",
+                    "doc_id": "d1",
+                    "chunk_id": "k1",
+                },
+            }
+        ]
+    )
+    assert items[0]["doc_name"] == "dn.md"
+    assert items[0]["doc_id"] == "d1"
+    assert items[0]["chunk_id"] == "k1"
+    assert "..." in items[0]["text_brief"]
+
+
+def test_stream_qa_events_bad_request_retries_without_stream_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _base_env(monkeypatch)
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    class FakeEmbedder:
+        dense_dimension = 4
+
+        def embed_query(self, q: str) -> list[float]:
+            return [0.25, 0.25, 0.25, 0.25]
+
+    class FakeStore:
+        def __init__(self, *a: Any, **k: Any) -> None:
+            pass
+
+        def search_knn(self, qv: list[float], k: int) -> list[dict[str, Any]]:
+            return []
+
+    class BadRequestError(Exception):
+        pass
+
+    class FakeCompletions:
+        _calls = 0
+
+        @staticmethod
+        def create(**kw: Any) -> Any:
+            FakeCompletions._calls += 1
+            if kw.get("stream_options"):
+                raise BadRequestError("no usage")
+            assert kw.get("stream_options") is None
+            return _fake_stream()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeOpenAI:
+        def __init__(self, **kw: Any) -> None:
+            pass
+
+        chat = FakeChat()
+
+    fake_openai_mod = ModuleType("openai")
+    fake_openai_mod.OpenAI = FakeOpenAI
+    fake_openai_mod.BadRequestError = BadRequestError
+    monkeypatch.setitem(sys.modules, "openai", fake_openai_mod)
+
+    monkeypatch.setattr("embeddings.build_embedder", lambda s: FakeEmbedder())
+    monkeypatch.setattr("es_store.client.elasticsearch_client", lambda s: object())
+    monkeypatch.setattr("es_store.store.EsChunkStore", FakeStore)
+
+    events = list(stream_qa_events("q?", settings=settings))
+    assert FakeCompletions._calls == 2
+    assert any(e["type"] == "done" and e["ok"] for e in events)
+
+
+def test_stream_qa_events_stream_iteration_error_yields_done_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _base_env(monkeypatch)
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    class FakeEmbedder:
+        dense_dimension = 4
+
+        def embed_query(self, q: str) -> list[float]:
+            return [0.25, 0.25, 0.25, 0.25]
+
+    class FakeStore:
+        def __init__(self, *a: Any, **k: Any) -> None:
+            pass
+
+        def search_knn(self, qv: list[float], k: int) -> list[dict[str, Any]]:
+            return []
+
+    def bad_stream() -> Any:
+        yield _FakeChunk("x")
+        raise RuntimeError("stream broke")
+
+    class FakeCompletions:
+        @staticmethod
+        def create(**kw: Any) -> Any:
+            return bad_stream()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeOpenAI:
+        def __init__(self, **kw: Any) -> None:
+            pass
+
+        chat = FakeChat()
+
+    fake_openai_mod = ModuleType("openai")
+    fake_openai_mod.OpenAI = FakeOpenAI
+    monkeypatch.setitem(sys.modules, "openai", fake_openai_mod)
+
+    monkeypatch.setattr("embeddings.build_embedder", lambda s: FakeEmbedder())
+    monkeypatch.setattr("es_store.client.elasticsearch_client", lambda s: object())
+    monkeypatch.setattr("es_store.store.EsChunkStore", FakeStore)
+    monkeypatch.setattr("qa.streaming.write_qa_monitor_record", lambda *a, **k: None)
+    monkeypatch.setattr("qa.streaming._emit_console_qa_summary", lambda *a, **k: None)
+    monkeypatch.setattr("qa.streaming._emit_qa_audit_log", lambda *a, **k: None)
+
+    events = list(stream_qa_events("q?", settings=settings))
+    errs = [e for e in events if e["type"] == "error"]
+    assert errs and "RuntimeError" in errs[0]["message"]
+    done = [e for e in events if e["type"] == "done"][0]
+    assert done["ok"] is False

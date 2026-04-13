@@ -132,6 +132,59 @@ def test_to_numpy_2d_1d_input() -> None:
     assert arr.shape == (1, 3)
 
 
+def test_to_numpy_2d_invalid_ndim_raises() -> None:
+    import numpy as np
+
+    with pytest.raises(ValueError, match="ndim"):
+        _to_numpy_2d(np.zeros((2, 2, 2)))
+
+
+def test_to_numpy_2d_detach_and_cpu_paths() -> None:
+    import numpy as np
+
+    class _WithDetach:
+        def detach(self) -> "_WithDetach":
+            return self
+
+        def cpu(self) -> "_WithDetach":
+            return self
+
+        def numpy(self):
+            return np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float64)
+
+    class _CpuOnly:
+        def cpu(self) -> "_CpuOnly":
+            return self
+
+        def numpy(self):
+            return np.array([[0.0, 1.0, 0.0, 0.0]], dtype=np.float64)
+
+    a = _to_numpy_2d(_WithDetach())
+    assert a.shape == (1, 4)
+    b = _to_numpy_2d(_CpuOnly())
+    assert b.shape == (1, 4)
+
+
+def test_devices_kw_strips_and_passes_to_model(
+    fake_torch: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del fake_torch
+    seen: dict[str, object] = {}
+
+    class _Capturing(_FakeBGEM3Model):
+        def __init__(self, model_path: str, **kwargs: object) -> None:
+            seen.update(kwargs)
+            super().__init__(model_path, **kwargs)
+
+    monkeypatch.setattr(
+        "embeddings.bge_m3._load_bgem3_class",
+        lambda: _Capturing,
+    )
+    BgeM3EmbeddingBackend("/m", batch_size=8, devices="  cuda:0  ")
+    assert seen.get("devices") == "cuda:0"
+
+
 def test_l2_normalize_rows_unit_norm(backend: BgeM3EmbeddingBackend) -> None:
     del backend
     import numpy as np
