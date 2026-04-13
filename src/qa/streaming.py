@@ -246,13 +246,13 @@ def stream_qa_events(
     for h in hits:
         src = h.get("source") or {}
         text = str(src.get("text", ""))
-        preview = text[:400] + ("…" if len(text) > 400 else "")
         hit_summaries.append(
             {
                 "source_file": src.get("source_file"),
                 "chunk_index": src.get("chunk_index"),
                 "score": h.get("score"),
-                "preview": preview,
+                # WebUI 展示完整片段；审计日志仍用 _qa_audit_retrieval_items 的摘要
+                "preview": text,
             }
         )
     yield {

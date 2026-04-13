@@ -644,7 +644,7 @@
 
     /* Retrieval */
     .retrieval-container {
-      max-height: 400px;
+      max-height: min(70vh, 720px);
       overflow-y: auto;
     }
 
@@ -689,6 +689,8 @@
       font-size: 0.875rem;
       color: var(--text-secondary);
       line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
 
     .retrieval-meta {
@@ -1560,7 +1562,7 @@
       return div;
     }
 
-    /** SSE `retrieval` 事件里每条命中为后端摘要：preview、score、source_file、chunk_index（见 qa/streaming.py）。 */
+    /** SSE `retrieval` 事件：preview/text 为完整片段正文，score、source_file、chunk_index（见 qa/streaming.py）。 */
     function escapeHtml(s) {
       const d = document.createElement('div');
       d.textContent = s;
