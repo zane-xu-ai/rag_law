@@ -713,6 +713,44 @@
       word-break: break-word;
     }
 
+    .reasoning-block {
+      display: none;
+      margin-bottom: 1rem;
+      padding: 1rem 1.25rem;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-sm);
+      border-left: 3px solid var(--info);
+    }
+
+    .reasoning-block.visible {
+      display: block;
+    }
+
+    .reasoning-block.streaming {
+      border-left-color: var(--info);
+    }
+
+    .reasoning-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.5rem;
+    }
+
+    .reasoning-content {
+      font-size: 0.875rem;
+      line-height: 1.75;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      max-height: min(45vh, 480px);
+      overflow-y: auto;
+    }
+
     .answer-container.streaming {
       border-color: var(--accent);
       animation: pulse-border 2s ease-in-out infinite;
@@ -1157,6 +1195,10 @@
       <div class="card-title">
         <span>💬</span> 回答
       </div>
+      <div id="reasoningBlock" class="reasoning-block" aria-live="polite">
+        <div class="reasoning-label">深度思考</div>
+        <div class="reasoning-content" id="reasoning"></div>
+      </div>
       <div class="answer-container" id="answer">
         <div class="answer-placeholder">答案将在此处流式显示...</div>
       </div>
@@ -1301,6 +1343,8 @@
     const phasesEl = $("phases");
     const retrievalEl = $("retrieval");
     const answerEl = $("answer");
+    const reasoningBlock = $("reasoningBlock");
+    const reasoningEl = $("reasoning");
     const errEl = $("err");
     const metricsCard = $("metricsCard");
     const hitCountEl = $("hitCount");
@@ -1627,6 +1671,10 @@
       phasesEl.innerHTML = '';
       retrievalEl.innerHTML = '';
       answerEl.innerHTML = '';
+      if (reasoningEl) reasoningEl.textContent = '';
+      if (reasoningBlock) {
+        reasoningBlock.classList.remove('visible', 'streaming');
+      }
       answerEl.classList.add('streaming');
       metricsCard.style.display = 'none';
       hitCountEl.textContent = '';
@@ -1686,6 +1734,12 @@
               (ev.hits || []).forEach((hit, idx) => {
                 retrievalEl.appendChild(createRetrievalItem(idx, hit));
               });
+            } else if (ev.type === "reasoning_delta") {
+              if (reasoningBlock && reasoningEl && ev.content != null && String(ev.content) !== "") {
+                reasoningBlock.classList.add('visible', 'streaming');
+                reasoningEl.textContent += ev.content;
+                reasoningEl.scrollTop = reasoningEl.scrollHeight;
+              }
             } else if (ev.type === "delta") {
               // Remove placeholder on first content
               if (answerEl.querySelector('.answer-placeholder')) {
@@ -1702,6 +1756,7 @@
               $("total").textContent = String(ev.total_ms);
               $("ragpre").textContent = String(ev.rag_prefill_ms);
               answerEl.classList.remove('streaming');
+              if (reasoningBlock) reasoningBlock.classList.remove('streaming');
             } else if (ev.type === "error") {
               errEl.textContent = ev.message || "error";
               errEl.classList.add('show');
@@ -1711,6 +1766,7 @@
       } catch (e) {
         if (isAbortError(e)) {
           answerEl.classList.remove('streaming');
+          if (reasoningBlock) reasoningBlock.classList.remove('streaming');
           const plain = answerEl.textContent.trim();
           const hasStoppedMark = answerEl.querySelector(".answer-stopped");
           if (!plain || answerEl.querySelector(".answer-placeholder")) {
@@ -1726,6 +1782,7 @@
           errEl.textContent = String(e.message || e);
           errEl.classList.add('show');
           answerEl.classList.remove('streaming');
+          if (reasoningBlock) reasoningBlock.classList.remove('streaming');
         }
       } finally {
         streamAbortController = null;

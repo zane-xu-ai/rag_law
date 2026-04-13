@@ -49,6 +49,48 @@ def _brief_for_console(text: str) -> str:
     return _brief_text(text, head=100, tail=100)
 
 
+def _delta_reasoning_and_content(choice: Any) -> tuple[str | None, str | None]:
+    """从流式 chunk 的 choice.delta 取出 (深度思考片段, 正文片段)。
+
+    兼容 OpenAI 兼容网关常见扩展字段（DeepSeek / 部分 Qwen 思考模式等）：
+    ``reasoning_content``、``reasoning``、``thinking``；SDK ``ChoiceDelta`` 为 ``extra="allow"`` 时会保留未知字段。
+    """
+    if not choice or not getattr(choice, "delta", None):
+        return None, None
+    d = choice.delta
+    content = getattr(d, "content", None)
+    if content == "":
+        content = None
+
+    reasoning: str | None = None
+    for attr in ("reasoning_content", "reasoning", "thinking"):
+        v = getattr(d, attr, None)
+        if v:
+            reasoning = str(v)
+            break
+    if not reasoning and hasattr(d, "model_extra") and getattr(d, "model_extra", None):
+        me = d.model_extra or {}
+        for key in ("reasoning_content", "reasoning", "thinking"):
+            v = me.get(key)
+            if v:
+                reasoning = str(v)
+                break
+    if not reasoning:
+        try:
+            dumped = d.model_dump(exclude_unset=False)
+        except Exception:
+            dumped = {}
+        for key in ("reasoning_content", "reasoning", "thinking"):
+            v = dumped.get(key) if isinstance(dumped, dict) else None
+            if v:
+                reasoning = str(v)
+                break
+
+    if reasoning == "":
+        reasoning = None
+    return reasoning, content
+
+
 def _qa_audit_retrieval_items(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for h in hits:
@@ -316,6 +358,7 @@ def stream_qa_events(
     first_token_wall: float | None = None
     body_start: float | None = None
     full_text: list[str] = []
+    full_reasoning: list[str] = []
     usage: LlmUsage | None = None
     model_name_runtime: str | None = None
 
@@ -327,10 +370,8 @@ def stream_qa_events(
             if maybe_usage is not None:
                 usage = maybe_usage
             choice = chunk.choices[0] if chunk.choices else None
-            delta = None
-            if choice and choice.delta:
-                delta = choice.delta.content
-            if not delta:
+            reasoning_piece, content_piece = _delta_reasoning_and_content(choice)
+            if not reasoning_piece and not content_piece:
                 continue
             if first_token_wall is None:
                 first_token_wall = _now()
@@ -349,8 +390,12 @@ def stream_qa_events(
                     "ttft_ms": _ms(first_token_wall - t0),
                     "rag_prefill_ms": rag_prefill_ms,
                 }
-            full_text.append(delta)
-            yield {"type": "delta", "content": delta}
+            if reasoning_piece:
+                full_reasoning.append(reasoning_piece)
+                yield {"type": "reasoning_delta", "content": reasoning_piece}
+            if content_piece:
+                full_text.append(content_piece)
+                yield {"type": "delta", "content": content_piece}
     except Exception as e:
         yield {"type": "error", "message": "%s: %s" % (type(e).__name__, e)}
         t_end = _now()
@@ -520,7 +565,8 @@ def stream_qa_events(
         ok=True,
         error=None,
     )
-    yield {
+    reasoning_joined = "".join(full_reasoning)
+    done_ok: dict[str, Any] = {
         "type": "done",
         "ok": True,
         "total_ms": total_ms_ok,
@@ -530,6 +576,9 @@ def stream_qa_events(
         "text": "".join(full_text),
         "conversation_id": cid,
     }
+    if reasoning_joined:
+        done_ok["reasoning_text"] = reasoning_joined
+    yield done_ok
 
 
 def format_sse_event(obj: dict[str, Any]) -> str:
