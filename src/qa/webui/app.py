@@ -161,7 +161,7 @@ def api_random_query() -> dict[str, str]:
 def get_model_config(request: Request) -> dict:
     """返回可用模型配置（按供应商分组）；启动时加载到内存。
 
-    附加 ``defaults``：与 ``.env`` 中 ``MODEL_NAME`` 一致；``defaultProvider`` 为反查结果，无法判断时落在 Qwen 分组（如 ``Alibaba-Qwen``）。
+    附加 ``defaults``：与 ``.env`` 中 ``MODEL_NAME`` / ``RETRIEVAL_K`` 一致；``defaultProvider`` 为反查结果，无法判断时落在 Qwen 分组（如 ``Alibaba-Qwen``）。``defaultRetrievalK`` 为 ``3``/``4``/``5``（与 WebUI 下拉一致）。
     """
     config = getattr(request.app.state, "model_config", {})
     if not config:
@@ -171,6 +171,16 @@ def get_model_config(request: Request) -> dict:
     if settings is not None:
         out["defaults"] = _resolve_qa_ui_defaults(config, settings)
     return out
+
+
+def _retrieval_k_for_ui(settings: Any) -> int:
+    """WebUI 仅提供 3/4/5；与 ``RETRIEVAL_K`` 对齐，区间外压到 ``[3, 5]`` 再取最近可选值。"""
+    raw = int(getattr(settings, "retrieval_k", 5) or 5)
+    allowed = (3, 4, 5)
+    if raw in allowed:
+        return raw
+    clamped = min(5, max(3, raw))
+    return clamped
 
 
 def _resolve_qa_ui_defaults(model_config: dict[str, Any], settings: Any) -> dict[str, Any]:
@@ -196,6 +206,7 @@ def _resolve_qa_ui_defaults(model_config: dict[str, Any], settings: Any) -> dict
     return {
         "defaultProvider": provider,
         "defaultModel": model_name,
+        "defaultRetrievalK": _retrieval_k_for_ui(settings),
     }
 
 

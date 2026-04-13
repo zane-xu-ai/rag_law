@@ -428,6 +428,11 @@
       cursor: not-allowed;
     }
 
+    .k-select {
+      min-width: 4.5rem;
+      padding: 0.5rem 0.75rem;
+    }
+
     .model-select option {
       background: var(--bg-card);
       color: var(--text);
@@ -986,7 +991,11 @@
       <div class="controls">
         <div class="control-group">
           <label for="k">检索数量 k</label>
-          <input type="number" id="k" min="1" max="20" placeholder="默认" />
+          <select id="k" class="model-select k-select" aria-label="检索数量 k" title="与 .env 中 RETRIEVAL_K 一致，由服务端启动时注入">
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
         </div>
         <div class="control-group">
           <label>选择模型</label>
@@ -1195,6 +1204,7 @@
         modelData = await res.json();
         populateProviders();
         applyModelDefaults();
+        applyRetrievalKDefault();
       } catch (e) {
         console.warn('Failed to load model list:', e);
         // 下拉加载失败时不影响提问：回退服务端默认模型（不传 model 字段）
@@ -1202,6 +1212,8 @@
         modelSelect.innerHTML = '<option value="">-- 使用配置默认模型 --</option>';
         providerSelect.disabled = true;
         modelSelect.disabled = true;
+        const kSel = $('k');
+        if (kSel) kSel.value = '5';
       }
     }
 
@@ -1254,6 +1266,16 @@
       opt.textContent = wantStr + '（.env，不在下拉白名单时服务端仍可能使用该名）';
       modelSelect.insertBefore(opt, modelSelect.options[1] || null);
       modelSelect.value = wantStr;
+    }
+
+    /** 与 defaults.defaultRetrievalK 对齐（来自 .env 的 RETRIEVAL_K，服务端压到 3/4/5）。 */
+    function applyRetrievalKDefault() {
+      const sel = $('k');
+      if (!sel || !modelData || !modelData.defaults) return;
+      const dk = modelData.defaults.defaultRetrievalK;
+      if (dk == null || dk === undefined) return;
+      const s = String(dk);
+      if (['3', '4', '5'].includes(s)) sel.value = s;
     }
 
     providerSelect.addEventListener('change', (e) => {

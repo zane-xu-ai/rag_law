@@ -132,6 +132,7 @@ def test_models_list(client: TestClient) -> None:
     assert "defaults" in data
     assert data["defaults"]["defaultModel"] == "qwen-test"
     assert data["defaults"]["defaultProvider"] == "Alibaba-Qwen"
+    assert data["defaults"]["defaultRetrievalK"] == 3
 
 
 def test_qa_stream_backend_exception_returns_error_event(client: TestClient) -> None:

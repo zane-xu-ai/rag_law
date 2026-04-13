@@ -53,7 +53,7 @@ else
 fi
 
 echo "[start_qa_webui] uv sync --extra embedding --extra llm"
-uv sync --extra embedding --extra llm
+uv sync --extra embedding --extra llm --extra segmentation
 
 echo "[start_qa_webui] uvicorn qa.webui.app:app --host 0.0.0.0 --port 8766"
 exec uv run uvicorn qa.webui.app:app --host 0.0.0.0 --port 8766
