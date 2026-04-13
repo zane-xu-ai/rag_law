@@ -25,12 +25,24 @@ def _base_env(monkeypatch: pytest.MonkeyPatch, **overrides: str) -> None:
         "RETRIEVAL_K": "5",
     }
     base.update(overrides)
+    monkeypatch.delenv("GENERATE_MODEL_NAME", raising=False)
     for key, value in base.items():
         monkeypatch.setenv(key, value)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("PARENT_CHUNK_SIZE", raising=False)
     monkeypatch.delenv("ES_USER", raising=False)
     monkeypatch.delenv("ES_PASSWORD", raising=False)
+
+
+def test_generate_model_name_resolved(monkeypatch: pytest.MonkeyPatch) -> None:
+    _base_env(monkeypatch)
+    get_settings.cache_clear()
+    s = get_settings()
+    assert s.generate_model_name_resolved == "qwen-test"
+    _base_env(monkeypatch, GENERATE_MODEL_NAME="gold-only-model")
+    get_settings.cache_clear()
+    s2 = get_settings()
+    assert s2.generate_model_name_resolved == "gold-only-model"
 
 
 def test_get_settings_loads_from_env(monkeypatch: pytest.MonkeyPatch) -> None:

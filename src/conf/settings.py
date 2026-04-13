@@ -57,6 +57,11 @@ class Settings(BaseSettings):
         validation_alias="MODEL_NAME",
         description="聊天模型名",
     )
+    generate_model_name: Optional[str] = Field(
+        default=None,
+        validation_alias="GENERATE_MODEL_NAME",
+        description="金标生成等离线任务所用模型名；未设置时与 MODEL_NAME 相同",
+    )
 
     # --- Elasticsearch ---
     es_host: str = Field(default="localhost", validation_alias="ES_HOST")
@@ -380,6 +385,13 @@ class Settings(BaseSettings):
                     % (self.chunk_boundary_max_scan, self.chunk_size)
                 )
         return self
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def generate_model_name_resolved(self) -> str:
+        """金标生成等任务实际使用的模型名（未配置 GENERATE_MODEL_NAME 时等同 MODEL_NAME）。"""
+        g = (self.generate_model_name or "").strip()
+        return g if g else self.model_name
 
     @computed_field  # type: ignore[prop-decorator]
     @property
